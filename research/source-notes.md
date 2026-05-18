@@ -1,9 +1,11 @@
 # Source Notes
 
-Primary source:
+Primary public sources:
 
 - Video: https://www.youtube.com/watch?v=55pTFVoclvE
-- Transcript: `research/video-transcript.md`
+- Transcript: `video-transcript.md`
+- Atlassian software homepage: https://www.atlassian.com/software
+- Normalized homepage extract: `software-page-extract.md`
 
 Additional public references used to keep the blueprint grounded:
 
@@ -12,4 +14,6 @@ Additional public references used to keep the blueprint grounded:
 
 ## Important caveat
 
-This repository is a clean-room architectural reconstruction from public discussion. It intentionally avoids proprietary Atlassian code, private diagrams, private configuration, internal names beyond those spoken publicly in the video, and any claim of exact implementation fidelity.
+This repository is a clean-room architectural reconstruction from public discussion and public product pages. It intentionally avoids proprietary Atlassian code, private diagrams, private configuration, internal names beyond public source material, and any claim of exact implementation fidelity.
+
+The product map is inferred from public positioning. It should be read as an architecture model for understanding the suite, not as a statement of Atlassian's private service boundaries or internal data model.

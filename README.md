@@ -1,15 +1,22 @@
 # Atlassian Innerwork
 
-Production-grade reference design for an Atlassian-style self-service edge platform.
+A clean-room, public-source reconstruction of Atlassian's system-of-work architecture.
 
-This repository reverse-engineers the grand design described in the video:
+This repo started from the public video at https://www.youtube.com/watch?v=55pTFVoclvE and now folds in Atlassian's public software catalog at https://www.atlassian.com/software.
 
-https://www.youtube.com/watch?v=55pTFVoclvE
+It does not contain Atlassian source code, private diagrams, private configuration, or claims of exact internal fidelity. It reconstructs the architecture pattern: an integrated product suite running on a shared Atlassian Cloud Platform, with a self-service edge/control-plane pattern for exposing product services safely.
 
-It does not claim to contain Atlassian source code or private implementation details. It reconstructs the public architectural pattern from the talk and turns it into a buildable blueprint: self-service edge provisioning, an OSB-inspired broker, an Envoy/xDS control plane, pre-provisioned regional proxy fleets, sidecar-based platform concerns, and production hardening around validation, safety, observability, and operations.
+## Read this first
+
+1. `docs/overview.md` — the easiest end-to-end explanation.
+2. `docs/product-system-map.md` — reverse-engineered map of the product suite.
+3. `docs/grand-design.md` — production-grade platform architecture.
+4. `docs/architecture.html` — standalone visual diagram.
 
 ## What is inside
 
+- `docs/overview.md` — concise repo guide and mental model.
+- `docs/product-system-map.md` — public product, collection, platform, and ecosystem surfaces from the software homepage, mapped into capabilities and platform dependencies.
 - `docs/grand-design.md` — polished production architecture and operating model.
 - `docs/architecture.html` — standalone dark SVG architecture diagram.
 - `docs/production-grade-roadmap.md` — staged path from prototype to production.
@@ -19,7 +26,9 @@ It does not claim to contain Atlassian source code or private implementation det
 - `spec/openapi.yaml` — OSB-inspired broker API contract.
 - `examples/edge-service.yaml` — sample developer-facing edge intent.
 - `research/video-transcript.md` — timestamped transcript used as source material.
+- `research/software-page-extract.md` — normalized extraction from the Atlassian software homepage.
 - `src/innerwork/` — executable Python model for the broker/control-plane contract.
+- `data/product_catalog.json` — structured product/collection/platform taxonomy used by tests and docs.
 - `tests/` — regression tests for the core invariants.
 
 ## Quick start
@@ -31,29 +40,43 @@ uvx pytest -q
 Expected:
 
 ```text
-13 passed
+24 passed
 ```
 
 ## Core idea
 
-Developers submit a small, validated edge-service intent:
+Atlassian's public product surface reads like a single system of work rather than a set of isolated apps:
+
+- teamwork core: Jira, Confluence, Loom, Trello, Rovo;
+- software delivery: Bitbucket, Pipelines, Rovo Dev, DX;
+- service: Jira Service Management, Customer Service Management, Assets, Statuspage, Guard;
+- product discovery: Jira Product Discovery, Feedback, Rovo;
+- strategy: Focus, Talent, Jira Align;
+- platform foundation: Home, Goals, Teams, Studio, Search, Chat, Analytics, Admin.
+
+The architecture pattern is a shared platform underneath these products:
+
+1. product teams declare service intent instead of owning bespoke edge stacks;
+2. a broker validates ownership, domains, routes, and policy;
+3. a control plane renders deterministic Envoy/xDS-style snapshots;
+4. regional proxy fleets enforce common security, observability, and reliability controls;
+5. platform services such as identity, search, analytics, AI agents, admin, and marketplace connect the product suite into one operating system for work.
+
+## Example edge intent
 
 ```python
 EdgeServiceSpec(
     service_id="jira-web",
     owner="jira-platform",
+    product_family="teamwork_core",
+    edge_profile="web_app_api",
     domains=("jira.example.com",),
     routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
     features=("external_auth", "rate_limit", "access_logs"),
 )
 ```
 
-The platform turns that into:
-
-1. durable broker state and last-operation status;
-2. deterministic xDS-style snapshots;
-3. Envoy listeners, virtual hosts, clusters, and filters;
-4. centralized auth, authorization, rate limiting, access logging, DDoS protection, and compliance controls before traffic reaches product services.
+The platform turns that into durable broker state, service-scoped operation status, deterministic xDS-style snapshots, Envoy listeners/routes/clusters/filters, and centralized controls before traffic reaches product services.
 
 ## License
 

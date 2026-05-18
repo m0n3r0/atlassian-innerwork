@@ -1,4 +1,4 @@
-# ADR-001: Use Broker + Envoy Control Plane + Regional Proxy Fleets
+# ADR-001: Use Product-Suite Map + Broker + Envoy Control Plane + Regional Proxy Fleets
 
 ## Status
 
@@ -6,45 +6,56 @@ Accepted for this reference design.
 
 ## Context
 
-The source video describes a platform that replaced manual or enterprise load-balancer workflows with self-service provisioning. Developers needed simple inputs, while the platform team needed central control over routing, security, observability, and operations.
+The source video describes a platform that replaced manual or enterprise-load-balancer-oriented workflows with self-service broker provisioning and an Envoy-based regional data plane.
+
+The Atlassian software homepage shows why this kind of shared platform matters: Atlassian exposes many products and collections that need common identity, permissions, routing, search, analytics, AI, admin, observability, and operational controls.
+
+The design must therefore explain both sides:
+
+1. the product suite and shared system-of-work platform;
+2. the edge/control-plane mechanism that safely exposes product services.
 
 ## Decision
 
-Use a layered architecture:
+Use a layered reference architecture:
 
-1. an Open Service Broker-style API for lifecycle operations;
-2. asynchronous workers for cloud-side provisioning;
-3. durable state as the source of truth;
-4. an Envoy xDS control plane for dynamic config;
-5. pre-provisioned regional Envoy proxy fleets;
-6. local sidecars for complex platform concerns.
+1. Product-suite map grounded in public homepage data.
+2. Shared Atlassian Cloud Platform primitives: Home, Goals, Teams, Studio, Search, Chat, Analytics, Admin.
+3. Product/service graph connecting work, knowledge, teams, code, services, assets, incidents, feedback, and strategy.
+4. OSB-inspired broker for self-service edge intent.
+5. Durable state and async workers for provisioning.
+6. Envoy xDS control plane for deterministic runtime config.
+7. Regional proxy fleets with sidecars for cross-cutting controls.
 
 ## Consequences
 
-Benefits:
+Positive:
 
-- product teams get self-service public exposure;
-- platform concerns are solved once at the edge;
-- configuration is validated, diffed, canaried, and rolled back centrally;
-- backends avoid duplicating authentication, rate limiting, and logging logic.
+- The repo is easier to read because product context appears before infrastructure mechanics.
+- Product-specific edge profiles can be discussed without inventing private implementation details.
+- The executable model remains small while docs cover the broader system-of-work architecture.
+- Future build phases can add structured product taxonomy and policy profiles.
 
-Tradeoffs:
+Trade-offs:
 
-- control-plane correctness becomes critical;
-- schema design must be conservative;
-- platform team owns a large operational surface;
-- poor rollout gates can create global blast radius.
+- The product map is inferred from public positioning, not private service boundaries.
+- The repo intentionally stays a reference architecture, not a clone of Atlassian products.
+- Some product capabilities are modeled as platform dependencies even when their exact internal implementation is unknown.
 
 ## Rejected alternatives
 
-### Let teams manage their own load balancers
+### Edge-only architecture
 
-Rejected because it duplicates effort, creates inconsistent security posture, and makes compliance evidence difficult.
+Rejected because it made the repo look like a load-balancer project and did not explain how the public product suite fits together.
 
-### Let teams submit raw Envoy config
+### Product clone
 
-Rejected because raw config is too powerful and easy to misuse. The platform should expose intent, not mechanism.
+Rejected because the goal is architecture reverse engineering, not recreating Atlassian applications.
 
-### Create proxies on demand for every service
+### Raw Envoy configuration as tenant API
 
-Rejected as the default because pre-provisioned fleets reduce provisioning latency and make capacity/operations more predictable. Dedicated fleets can still exist for exceptional isolation requirements.
+Rejected because it makes tenants responsible for unsafe low-level details and makes policy enforcement harder.
+
+### Single monolithic product service
+
+Rejected because the public product suite clearly spans many jobs-to-be-done and requires a shared platform plus product-specific surfaces.

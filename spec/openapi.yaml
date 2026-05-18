@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Atlassian Innerwork Broker API
   version: 0.1.0
-  description: OSB-inspired API for self-service edge exposure.
+  description: OSB-inspired API for self-service edge exposure across product-family profiles.
 servers:
   - url: https://edge-broker.example.com
 security:
@@ -141,13 +141,40 @@ components:
           additionalProperties: false
     EdgeServiceSpec:
       type: object
-      required: [service_id, owner, domains, routes]
+      required: [service_id, owner, product_family, edge_profile, domains, routes]
       properties:
         service_id:
           type: string
           pattern: '^[a-z0-9][a-z0-9-]{1,62}$'
         owner:
           type: string
+        product_family:
+          enum:
+            - teamwork_core
+            - software_delivery
+            - service_management
+            - product_discovery
+            - strategy
+            - ecosystem
+            - legacy_developer_tools
+        edge_profile:
+          enum:
+            - web_app_api
+            - media_video
+            - git_code
+            - ci_cd
+            - service_portal
+            - public_status
+            - ai_agent_api
+            - admin_security
+            - enterprise_planning
+            - analytics_api
+            - catalog_api
+            - marketplace_extension
+            - community_web
+            - partner_directory
+            - developer_portal
+            - desktop_client
         domains:
           type: array
           minItems: 1

@@ -1,26 +1,29 @@
 # Atlassian Innerwork Grand Design
 
-> Reverse-engineered from the public video at https://www.youtube.com/watch?v=55pTFVoclvE. This document describes an Atlassian-style platform pattern, not Atlassian proprietary implementation.
+> Clean-room reconstruction from public sources: the video at https://www.youtube.com/watch?v=55pTFVoclvE and the software homepage at https://www.atlassian.com/software. This document describes an Atlassian-style platform pattern, not Atlassian proprietary implementation.
 
 ## Executive summary
 
-The system is a self-service edge platform. Product teams declare that a service should be reachable at the public edge; the platform validates that intent, provisions or updates shared edge resources, and serves dynamic Envoy configuration to a large regional proxy fleet. Cross-cutting concerns such as DDoS protection, authentication, authorization, rate limiting, access logging, observability, and compliance are centralized at the edge instead of being rebuilt by every product service.
+Atlassian's public portfolio now reads as a single system of work: Jira, Confluence, Loom, Trello, Rovo, Jira Service Management, Bitbucket, Jira Product Discovery, Focus, Talent, Align, and more sit on a connected cloud platform. The video explains one critical platform pattern needed to operate that breadth safely: a self-service edge platform that lets product teams expose services through a common broker, control plane, and regional Envoy data plane.
 
-The grand design has five layers:
+The production-grade design has six layers:
 
-1. Developer-facing intent: small configuration committed through normal delivery workflows.
-2. Service broker: an Open Service Broker-style API that accepts provision/update/delete requests, stores state, and exposes last-operation polling.
-3. Control plane: a management server that renders validated platform state into Envoy xDS resources.
-4. Data plane: pre-provisioned Envoy proxy fleets across many regions, fronted by cloud networking.
-5. Production substrate: AMI/image pipelines, infrastructure as code, sidecars, observability, compliance, and operational playbooks.
+1. Product experiences: the apps and collections visible to customers.
+2. Shared system-of-work platform: identity, teams, goals, search, chat, analytics, admin, marketplace, and AI agents.
+3. Developer-facing service intent: product teams declare exposure and policy needs through a narrow model.
+4. Broker and workers: Open Service Broker-style API, async execution, durable state, audit, and operation polling.
+5. Envoy control plane: validated product/service intent rendered into deterministic xDS snapshots.
+6. Regional edge data plane: CDN/NLB, Envoy proxy fleets, sidecars, logs, metrics, rollout/rollback.
 
-The production-grade version adds stricter schemas, deterministic rendering, progressive rollout, safe rollback, tenant isolation, policy-as-code, audit trails, and SLO-driven operations.
+The edge platform is not the whole Atlassian platform, but it is a keystone: without common exposure, auth, logging, rate limiting, DDoS protection, compliance evidence, and rollout safety, each product would need to rebuild high-risk infrastructure independently.
 
 ---
 
-## Source-video reconstruction
+## Public-source reconstruction
 
-The video describes the following progression:
+### From the video
+
+The video describes this evolution:
 
 - A platform application for self-service load balancers, shaped like an Open Service Broker API.
 - A FastAPI web application, worker process, SQS queue, and DynamoDB state store.
@@ -33,48 +36,172 @@ The video describes the following progression:
 - Additional platform concerns handled at or beside the proxy: DDoS protection via CloudFront, access logs via Envoy, and local sidecars for authentication, authorization, and rate limiting.
 - Long-term maintenance lessons: documentation, onboarding, on-call debugging, predictable churn, decoupling, and mentoring.
 
+### From the software homepage
+
+The homepage shows the product surface this kind of platform must support:
+
+- Teamwork: Jira, Confluence, Loom, Trello, Rovo.
+- Software delivery: Bitbucket, Pipelines, Rovo Dev, DX.
+- Service: Jira Service Management, Customer Service Management, Assets, Statuspage, Guard.
+- Product discovery: Jira Product Discovery, Feedback, Rovo.
+- Strategy: Focus, Talent, Jira Align / Align.
+- Atlassian Cloud Platform: Home, Goals, Teams, Studio, Search, Chat, Analytics, Admin.
+- Ecosystem: Marketplace, Community, Partners, Developer resources.
+
+`product-system-map.md` provides the full product-by-product reconstruction.
+
 ---
 
 ## Reference architecture
 
 ```text
-Developer config / platform deploy
+Customers / users / integrations
         |
         v
-+-------------------+       +-----------------+       +------------------+
-| Open Service      | ----> | Async work      | ----> | Durable state     |
-| Broker API        |       | queue/workers   |       | catalog + intent  |
-+-------------------+       +-----------------+       +------------------+
-        |                                                     |
-        | last_operation                                      | watched/polled
-        v                                                     v
-+--------------------------------------------------------------------------+
-| Envoy control plane                                                      |
-| - validates tenant intent                                                |
-| - merges broker context + external context                               |
-| - renders deterministic xDS snapshots                                    |
-| - gates rollout and rollback                                             |
-+--------------------------------------------------------------------------+
-        |
-        | ADS/xDS
-        v
-+------------------+     +------------------+     +------------------+
-| Region A edge    |     | Region B edge    | ... | Region N edge    |
-| CloudFront/NLB   |     | CloudFront/NLB   |     | CloudFront/NLB   |
-| Envoy + sidecars |     | Envoy + sidecars |     | Envoy + sidecars |
-+------------------+     +------------------+     +------------------+
+Product experiences
+Jira | Confluence | Loom | Trello | JSM | CSM | Assets | Statuspage | Bitbucket | Rovo | Focus | Talent | Align
         |
         v
-Product backends: Jira, Confluence, Bitbucket, Statuspage, internal services
+Atlassian Cloud Platform
+Identity | Teams | Goals | Home | Search | Chat | Studio | Analytics | Admin | Marketplace
+        |
+        v
+Product and service graph
+work | knowledge | people | code | builds | services | assets | incidents | feedback | strategy
+        |
+        v
+Self-service edge platform
+Broker API -> async workers -> durable state -> xDS renderer -> rollout controller
+        |
+        v
+Regional edge data plane
+CloudFront/NLB -> Envoy fleet -> auth/authz/rate-limit/policy sidecars -> product backends
 ```
+
+### Key graphs
+
+The integrated product suite depends on shared graph-like primitives:
+
+| Graph | Objects | Main consumers |
+| --- | --- | --- |
+| Work graph | issues, projects, plans, tasks, requests, incidents | Jira, JSM, Trello, Align, Focus |
+| Knowledge graph | pages, videos, decisions, comments, artifacts | Confluence, Loom, Rovo |
+| Team graph | users, groups, teams, ownership, expertise | Admin, Teams, Guard, all products |
+| Delivery graph | repos, PRs, builds, deployments, services | Bitbucket, Pipelines, Rovo Dev, DX |
+| Service graph | assets, CIs, incidents, status, customer requests | JSM, CSM, Assets, Statuspage |
+| Strategy graph | goals, investments, funds, capacity, outcomes | Focus, Talent, Jira Align, Analytics |
 
 ---
 
-## Component design
+## Product-suite architecture
+
+### Teamwork core
+
+Products: Jira, Confluence, Loom, Trello, Rovo.
+
+Responsibilities:
+
+- capture work;
+- create durable knowledge;
+- enable async updates;
+- provide lightweight and heavyweight planning surfaces;
+- make work searchable and actionable through Rovo.
+
+Platform dependencies:
+
+- shared identity and permissions;
+- comments, mentions, notifications;
+- object linking between issues, pages, videos, and boards;
+- search indexing with permission filtering;
+- AI context retrieval and audit.
+
+### Software delivery
+
+Products: Bitbucket, Pipelines, Rovo Dev, DX.
+
+Responsibilities:
+
+- store source code;
+- review changes;
+- run CI/CD;
+- map software components and owners;
+- measure developer productivity, quality, and delivery flow;
+- let AI agents assist inside permissioned SDLC boundaries.
+
+Platform dependencies:
+
+- Git/API edge paths;
+- webhook ingress and delivery;
+- artifact/log access;
+- integration with Jira work items and Confluence docs;
+- service ownership metadata;
+- analytics and governance.
+
+### Service management
+
+Products: Jira Service Management, Customer Service Management, Assets, Statuspage, Guard.
+
+Responsibilities:
+
+- internal and customer service workflows;
+- incident, change, request, and support processes;
+- asset/CMDB context;
+- external status communication;
+- security and policy controls across Atlassian Cloud.
+
+Platform dependencies:
+
+- customer/user identity boundaries;
+- public portal routing;
+- strong tenant isolation;
+- asset and service graph links;
+- incident and status-page availability;
+- audit trails and admin policy enforcement.
+
+### Product discovery
+
+Products: Jira Product Discovery, Feedback, Rovo.
+
+Responsibilities:
+
+- collect ideas and feedback;
+- synthesize and prioritize;
+- produce roadmaps;
+- connect discovery to Jira delivery.
+
+Platform dependencies:
+
+- feedback ingestion;
+- roadmap/work-item links;
+- Confluence/Loom context;
+- Rovo summarization and search;
+- analytics over ideas, outcomes, and delivery.
+
+### Strategy and leadership
+
+Products: Focus, Talent, Jira Align / Align.
+
+Responsibilities:
+
+- connect goals, work, people, funds, and outcomes;
+- plan workforce/capacity;
+- align enterprise planning with delivery.
+
+Platform dependencies:
+
+- goal graph;
+- team/capacity graph;
+- delivery rollups from Jira/Bitbucket/DX;
+- portfolio analytics;
+- executive-level permissioning and audit.
+
+---
+
+## Edge platform component design
 
 ### 1. Developer intent layer
 
-Developers should not submit raw Envoy YAML. They submit a narrow, policy-aware resource model:
+Product teams should not submit raw Envoy YAML. They submit a narrow, policy-aware resource model:
 
 ```yaml
 apiVersion: edge.platform/v1
@@ -83,6 +210,8 @@ metadata:
   name: jira-web
   owner: jira-platform
 spec:
+  service_id: jira-web
+  owner: jira-platform
   domains:
     - jira.example.com
   routes:
@@ -91,9 +220,9 @@ spec:
         name: jira
         port: 8080
   features:
-    externalAuth: true
-    rateLimit: standard
-    accessLogs: required
+    - external_auth
+    - rate_limit
+    - access_logs
 ```
 
 Production requirements:
@@ -102,7 +231,8 @@ Production requirements:
 - ownership checks for domains, backends, certificates, and paths;
 - explicit public-exposure signal; no accidental public ingress;
 - safe defaults: TLS required, access logs on, deny unknown hosts, bounded timeouts;
-- compatibility versioning so templates can evolve without breaking tenants.
+- compatibility versioning so templates can evolve without breaking tenants;
+- product-specific routing profiles without product-specific edge stacks.
 
 ### 2. Open Service Broker-style API
 
@@ -120,11 +250,12 @@ Production requirements:
 - writes are transactional against durable state;
 - conflicting domains/routes fail before reaching the control plane;
 - orphan mitigation exists for partially applied cloud resources;
-- audit entries record actor, diff, validation result, worker actions, and final state.
+- audit entries record actor, diff, validation result, worker actions, and final state;
+- service-scoped operation lookup only.
 
 ### 3. Async worker layer
 
-Provisioning touches slow and failure-prone APIs: DNS, certificates, CloudFront, NLBs, IAM, secrets, and service discovery. The API should enqueue work and return immediately.
+Provisioning touches slow and failure-prone APIs: DNS, certificates, CloudFront, NLBs, IAM, secrets, service discovery, webhooks, and customer/tenant configuration. The API should enqueue work and return immediately.
 
 Production requirements:
 
@@ -141,8 +272,9 @@ The state store is the source of truth for declared edge intent and derived runt
 
 Suggested tables/collections:
 
-- `edge_services`: tenant intent, schema version, owner, lifecycle state;
+- `edge_services`: tenant intent, schema version, owner, lifecycle state, product family;
 - `domain_ownership`: domain -> service id, certificate id, validation state, ownership-proof status;
+- `route_ownership`: host/path -> service id, priority, policy profile;
 - `operations`: operation id, type, status, actor, started/finished timestamps;
 - `rendered_snapshots`: control-plane version, hash, validation result;
 - `rollouts`: region, fleet, canary percentage, health gates;
@@ -151,7 +283,7 @@ Suggested tables/collections:
 Production requirements:
 
 - optimistic concurrency control on service specs;
-- strong uniqueness on domain ownership;
+- strong uniqueness on domain and route ownership;
 - immutable audit history;
 - backup/restore drill coverage;
 - snapshot export for disaster recovery.
@@ -168,13 +300,14 @@ The control plane translates validated platform state into xDS resources:
 
 Production requirements:
 
-- deterministic rendering: same input produces same resource hashes;
+- deterministic rendering: same canonical input produces same resource hashes;
 - type-checked templates or generated builders instead of stringly YAML;
 - Envoy config validation before publication;
 - snapshot diffing and blast-radius estimation;
+- most-specific-prefix-first route rendering;
 - canary rollout by region/fleet;
 - automatic rollback if proxy NACKs, 5xx, latency, auth failures, or traffic drops exceed thresholds;
-- stale-proxy detection and version skew dashboards.
+- stale-proxy detection and version-skew dashboards.
 
 ### 6. Data-plane proxy fleet
 
@@ -206,7 +339,8 @@ Not every concern belongs inside Envoy config. Some are better as local services
 - rate limiting sidecar;
 - tenant context resolver;
 - policy decision point;
-- request enrichment or external processing.
+- request enrichment or external processing;
+- AI-agent/tool-call guard for Rovo-like actions.
 
 Production requirements:
 
@@ -214,7 +348,7 @@ Production requirements:
 - failure mode is explicit per route: fail closed for auth, bounded fail open only when business-approved;
 - sidecar config is delivered through the same safe rollout pipeline;
 - resource budgets prevent sidecars from starving Envoy;
-- logs correlate request id, tenant id, sidecar decision, and upstream cluster.
+- logs correlate request id, tenant id, sidecar decision, upstream cluster, product family, and actor.
 
 ### 8. Image and infrastructure pipeline
 
@@ -241,11 +375,11 @@ Production requirements:
 
 ### Provisioning lifecycle
 
-1. Developer commits edge-service config.
+1. Product team commits an edge-service config or triggers a platform deployment.
 2. Platform deploy system submits a broker request.
-3. Broker validates schema, ownership, and policy.
+3. Broker validates schema, ownership, product-family policy, and route/domain conflicts.
 4. Broker creates an operation row and queues worker task.
-5. Worker creates/updates DNS, certificates, CDN/NLB bindings, and durable intent.
+5. Worker creates/updates DNS, certificates, CDN/NLB bindings, service discovery, and durable intent.
 6. Control plane detects new state and renders a candidate snapshot.
 7. Candidate snapshot is validated, diffed, and canaried.
 8. Envoy fleet ACKs the new snapshot.
@@ -256,11 +390,28 @@ Production requirements:
 
 1. Customer request reaches CDN or NLB.
 2. Envoy receives TLS/HTTP traffic.
-3. Listener and route config identify tenant/service.
-4. Sidecars handle authentication, authorization, rate limit, and policy checks.
-5. Envoy emits access logs and metrics.
+3. Listener and route config identify tenant, product family, and service.
+4. Sidecars handle authentication, authorization, rate limit, tenant context, and policy checks.
+5. Envoy emits access logs, metrics, and traces.
 6. Envoy forwards to product backend cluster.
-7. Response flows back through Envoy and edge network.
+7. Product calls shared platform services as needed: identity, teams, search, chat, analytics, goals, marketplace.
+8. Response flows back through Envoy and edge network.
+
+---
+
+## Product-specific edge profiles
+
+| Product type | Edge profile |
+| --- | --- |
+| Jira/Confluence/Trello-style work apps | standard web/API routing, auth, rate limits, access logs, session safety. |
+| Loom/media | larger payloads, streaming/CDN behavior, upload/download paths, content scanning. |
+| Bitbucket/Git | Git HTTP/SSH support, webhooks, large repo operations, PR APIs. |
+| Pipelines/CI | build callbacks, artifact/log access, runner egress, webhook ingress. |
+| JSM/CSM service portals | customer/anonymous portal rules, stricter tenant isolation, SLA-sensitive routing. |
+| Statuspage | cache-friendly public status pages that remain available during incidents. |
+| Rovo/Rovo Dev/Studio agents | scoped tool calls, policy checks, prompt/data boundaries, audit and cost controls. |
+| Guard/Admin | privileged routes, stronger auth, policy enforcement, high-cardinality audit. |
+| Focus/Talent/Align | enterprise data access, portfolio analytics, stricter role-based permissions. |
 
 ---
 
@@ -274,6 +425,7 @@ Production requirements:
 - Canary and rollback every control-plane snapshot.
 - Fail closed for identity and authorization paths.
 - Keep previous known-good snapshots available per fleet.
+- Keep product-specific profiles explicit and reviewed.
 
 ### Reliability
 
@@ -281,7 +433,8 @@ Production requirements:
 - Proxy continues serving last-good config if control plane is unavailable.
 - Queue and worker backlog alerts.
 - Synthetic probes for every public domain and every region.
-- Per-tenant SLOs and per-platform SLOs.
+- Per-tenant, per-product, and per-platform SLOs.
+- Separate highly cacheable public status traffic from normal product traffic.
 
 ### Observability
 
@@ -292,7 +445,8 @@ Golden signals:
 - sidecar latency and decision counts;
 - provisioning operation duration and failure rate;
 - queue age and worker retries;
-- route-level 4xx/5xx and upstream connect failures.
+- route-level 4xx/5xx and upstream connect failures;
+- product-family and tenant-level SLO burn.
 
 Required logs:
 
@@ -301,6 +455,7 @@ Required logs:
 - control-plane render diff;
 - Envoy access log;
 - sidecar decision log;
+- Rovo/agent action audit where AI actions cross product boundaries;
 - operator action log.
 
 ### Security/compliance
@@ -311,6 +466,8 @@ Required logs:
 - IAM is least privilege per worker and fleet role.
 - Config changes are attributable and reversible.
 - Compliance evidence is generated from audit trails and rollout records.
+- Cross-product search/AI always applies source-product permissions.
+- Marketplace and Studio extensions run with scoped permissions and reviewable manifests.
 
 ### Maintainability
 
@@ -319,24 +476,27 @@ Required logs:
 - Version templates and migration steps.
 - Build docs for onboarding, on-call, debugging, and common failure modes.
 - Track churn hotspots and refactor before they become platform bottlenecks.
+- Keep product taxonomy in sync with public product changes.
 
 ---
 
 ## Design principles
 
 1. Intent over mechanism: developers describe exposure intent, not proxy internals.
-2. Centralize shared concerns: solve auth, logs, DDoS, and rate limits once at the edge.
-3. Validate before render: bad tenant input never reaches Envoy.
-4. Render deterministically: snapshots must be reproducible and diffable.
-5. Prefer last-known-good: control-plane outages must not drop data-plane traffic.
-6. Make rollout observable: every config and image change needs health gates.
-7. Treat platform APIs as products: stable contracts, docs, migration paths, and empathy for internal customers.
+2. One system of work: products should share identity, teams, goals, search, analytics, and graph links.
+3. Centralize shared concerns: solve auth, logs, DDoS, rate limits, and compliance once at the edge.
+4. Validate before render: bad tenant input never reaches Envoy.
+5. Render deterministically: snapshots must be reproducible and diffable.
+6. Prefer last-known-good: control-plane outages must not drop data-plane traffic.
+7. Make rollout observable: every config and image change needs health gates.
+8. Treat platform APIs as products: stable contracts, docs, migration paths, and empathy for internal customers.
+9. AI is a platform feature, not a bypass: agents must respect permissions, provenance, audit, and rollback.
 
 ---
 
 ## What this repository implements now
 
-The Python model in `src/innerwork` captures the core invariants:
+The Python model in `src/innerwork` captures the core edge invariants:
 
 - pre-approved domain registry or DNS/TLS proof for first domain claims;
 - broker-style provisioning;
@@ -352,4 +512,4 @@ The Python model in `src/innerwork` captures the core invariants:
 - deterministic content-hash xDS-style snapshot versioning;
 - feature-to-filter expansion for rate limiting and external auth.
 
-This is intentionally small. It is not a full edge platform; it is an executable architectural nucleus that can be expanded along the production roadmap.
+The docs now also model the full public product suite and how it depends on a shared platform. This is intentionally not a full Atlassian clone. It is an executable architectural nucleus plus a comprehensive product/platform map that can be expanded along the production roadmap.
