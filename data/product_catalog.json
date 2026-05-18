@@ -1,0 +1,628 @@
+{
+  "source": "https://www.atlassian.com/software",
+  "source_reviewed_at": "2026-05-18T22:28:10+09:00",
+  "caveat": "Public-source product architecture map; not a private Atlassian implementation map.",
+  "families": [
+    {
+      "id": "teamwork_core",
+      "name": "Teamwork core",
+      "products": [
+        "jira",
+        "confluence",
+        "loom",
+        "trello",
+        "rovo"
+      ],
+      "job_to_be_done": "Make work, knowledge, async updates, and AI assistance visible across teams."
+    },
+    {
+      "id": "software_delivery",
+      "name": "Software delivery",
+      "products": [
+        "bitbucket",
+        "pipelines",
+        "rovo_dev",
+        "dx"
+      ],
+      "job_to_be_done": "Connect code, CI/CD, service ownership, delivery metrics, and developer agents."
+    },
+    {
+      "id": "service_management",
+      "name": "Service management",
+      "products": [
+        "jira_service_management",
+        "customer_service_management",
+        "assets",
+        "statuspage",
+        "guard"
+      ],
+      "job_to_be_done": "Run internal/customer service workflows, assets, incident communication, and cloud security controls."
+    },
+    {
+      "id": "product_discovery",
+      "name": "Product discovery",
+      "products": [
+        "jira_product_discovery",
+        "feedback"
+      ],
+      "job_to_be_done": "Capture feedback, prioritize ideas, synthesize context, and link discovery to delivery."
+    },
+    {
+      "id": "strategy",
+      "name": "Strategy and leadership",
+      "products": [
+        "focus",
+        "talent",
+        "jira_align"
+      ],
+      "job_to_be_done": "Connect goals, investments, capacity, work, and outcomes."
+    },
+    {
+      "id": "ecosystem",
+      "name": "Ecosystem",
+      "products": [
+        "marketplace",
+        "community",
+        "partners",
+        "developer_resources"
+      ],
+      "job_to_be_done": "Extend, support, customize, and teach the system of work."
+    },
+    {
+      "id": "legacy_developer_tools",
+      "name": "Legacy and companion developer tools",
+      "products": [
+        "bamboo",
+        "sourcetree"
+      ],
+      "job_to_be_done": "Support CI/CD and local Git/Mercurial workflows outside the current cloud-first center."
+    }
+  ],
+  "collections": [
+    {
+      "id": "teamwork_collection",
+      "name": "Teamwork Collection",
+      "homepage_positioning": "Jira, Confluence, and Loom for supercharged teamwork.",
+      "items": [
+        "jira",
+        "confluence",
+        "loom"
+      ],
+      "job_to_be_done": "Plan, document, and communicate work in one loop."
+    },
+    {
+      "id": "strategy_collection",
+      "name": "Strategy Collection",
+      "homepage_positioning": "Focus, Talent, and Align for connecting strategy to execution.",
+      "items": [
+        "focus",
+        "talent",
+        "jira_align"
+      ],
+      "job_to_be_done": "Align goals, people, funding, and delivery."
+    },
+    {
+      "id": "service_collection",
+      "name": "Service Collection",
+      "homepage_positioning": "Jira Service Management, Customer Service Management, and Assets.",
+      "items": [
+        "jira_service_management",
+        "customer_service_management",
+        "assets"
+      ],
+      "job_to_be_done": "Deliver internal and customer service with operational context."
+    },
+    {
+      "id": "software_collection",
+      "name": "Software Collection",
+      "homepage_positioning": "Rovo Dev, DX, Pipelines, and Bitbucket.",
+      "items": [
+        "rovo_dev",
+        "dx",
+        "pipelines",
+        "bitbucket"
+      ],
+      "job_to_be_done": "Connect code, CI/CD, developer intelligence, and agentic assistance."
+    },
+    {
+      "id": "product_collection",
+      "name": "Product Collection",
+      "homepage_positioning": "Jira Product Discovery, Feedback, and Rovo.",
+      "items": [
+        "jira_product_discovery",
+        "feedback",
+        "rovo"
+      ],
+      "job_to_be_done": "Capture feedback, prioritize ideas, and synthesize product context."
+    }
+  ],
+  "platform_capabilities": [
+    {
+      "id": "home",
+      "name": "Home",
+      "responsibility": "Personalized cross-product work entry point."
+    },
+    {
+      "id": "goals",
+      "name": "Goals",
+      "responsibility": "Goal and objective graph connecting strategy to work."
+    },
+    {
+      "id": "teams",
+      "name": "Teams",
+      "responsibility": "People, groups, ownership, expertise, notifications, and permissions."
+    },
+    {
+      "id": "studio",
+      "name": "Studio",
+      "responsibility": "Custom agents, automations, and apps."
+    },
+    {
+      "id": "search",
+      "name": "Search",
+      "responsibility": "Cross-product search with source-product permission filtering."
+    },
+    {
+      "id": "chat",
+      "name": "Chat",
+      "responsibility": "Conversational interface over the system-of-work graph."
+    },
+    {
+      "id": "analytics",
+      "name": "Analytics",
+      "responsibility": "Cross-product reporting, freshness, metrics, and rollups."
+    },
+    {
+      "id": "admin",
+      "name": "Admin",
+      "responsibility": "Organization, product, identity, domain, policy, and audit administration."
+    }
+  ],
+  "products": [
+    {
+      "id": "jira",
+      "name": "Jira",
+      "family": "teamwork_core",
+      "homepage_positioning": "Flexible, AI-powered project management for planning, tracking, and delivering ideas.",
+      "system_role": "Primary work graph and workflow engine.",
+      "edge_profile": "web_app_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "goals",
+        "search",
+        "analytics",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "confluence",
+      "name": "Confluence",
+      "family": "teamwork_core",
+      "homepage_positioning": "Knowledge, documents, and discussion in one place.",
+      "system_role": "Knowledge graph and durable decision memory.",
+      "edge_profile": "web_app_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "loom",
+      "name": "Loom",
+      "family": "teamwork_core",
+      "homepage_positioning": "Async video messages and AI-powered meeting recaps.",
+      "system_role": "Rich communication and meeting-memory layer.",
+      "edge_profile": "media_video",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "trello",
+      "name": "Trello",
+      "family": "teamwork_core",
+      "homepage_positioning": "Visual boards for organizing projects in a flexible way.",
+      "system_role": "Lightweight task and kanban surface.",
+      "edge_profile": "web_app_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "rovo",
+      "name": "Rovo",
+      "family": "teamwork_core",
+      "homepage_positioning": "AI-powered Search, Chat, Agents, Studio-built custom agents, automations, and apps.",
+      "system_role": "Cross-product AI layer over work, knowledge, people, code, service, and strategy graphs.",
+      "edge_profile": "ai_agent_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "chat",
+        "studio",
+        "analytics",
+        "admin"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "bitbucket",
+      "name": "Bitbucket",
+      "family": "software_delivery",
+      "homepage_positioning": "Git repositories, inline comments, and pull requests.",
+      "system_role": "Source-code and code-review graph.",
+      "edge_profile": "git_code",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "jira",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "pipelines",
+      "name": "Pipelines",
+      "family": "software_delivery",
+      "homepage_positioning": "CI/CD automation with Bitbucket Pipelines.",
+      "system_role": "Build and deployment execution graph.",
+      "edge_profile": "ci_cd",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "analytics",
+        "bitbucket"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "homepage_capability",
+      "source_note": "Modeled separately because the homepage shows Pipelines as a software-collection item and product card, while positioning ties it to Bitbucket Pipelines."
+    },
+    {
+      "id": "rovo_dev",
+      "name": "Rovo Dev",
+      "family": "software_delivery",
+      "homepage_positioning": "AI-enabled productivity and quality for the SDLC.",
+      "system_role": "Developer-agent layer over repos, issues, builds, services, and docs.",
+      "edge_profile": "ai_agent_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "chat",
+        "jira",
+        "bitbucket"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "dx",
+      "name": "DX",
+      "family": "software_delivery",
+      "homepage_positioning": "AI-native SDLC measurement and improvement.",
+      "system_role": "Engineering metrics and developer-experience intelligence.",
+      "edge_profile": "analytics_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "analytics",
+        "bitbucket",
+        "pipelines"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "jira_service_management",
+      "name": "Jira Service Management",
+      "family": "service_management",
+      "homepage_positioning": "AI-powered service at scale.",
+      "system_role": "ITSM/ESM workflow engine for requests, incidents, changes, and operations.",
+      "edge_profile": "service_portal",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "assets",
+        "statuspage",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "customer_service_management",
+      "name": "Customer Service Management",
+      "family": "service_management",
+      "homepage_positioning": "AI-powered customer service with context.",
+      "system_role": "Customer-facing service workflow surface.",
+      "edge_profile": "service_portal",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "assets",
+      "name": "Assets",
+      "family": "service_management",
+      "homepage_positioning": "Dependency, asset, and configuration-item visibility.",
+      "system_role": "CMDB/asset graph for service management and operational risk.",
+      "edge_profile": "catalog_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "jira_service_management"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "statuspage",
+      "name": "Statuspage",
+      "family": "service_management",
+      "homepage_positioning": "Incident communication during downtime.",
+      "system_role": "External service-status and incident communication surface.",
+      "edge_profile": "public_status",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "analytics",
+        "jira_service_management"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "guard",
+      "name": "Guard",
+      "family": "service_management",
+      "homepage_positioning": "Company-wide visibility, security policies, and control across Atlassian cloud infrastructure.",
+      "system_role": "Organization-wide security and cloud policy control plane.",
+      "edge_profile": "admin_security",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "admin",
+        "analytics",
+        "audit"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "jira_product_discovery",
+      "name": "Jira Product Discovery",
+      "family": "product_discovery",
+      "homepage_positioning": "Capture feedback, prioritize ideas, and create roadmaps tied to Jira delivery.",
+      "system_role": "Product-intake and prioritization layer.",
+      "edge_profile": "web_app_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "jira",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "feedback",
+      "name": "Feedback",
+      "family": "product_discovery",
+      "homepage_positioning": "Feedback capability shown with Jira Product Discovery and Rovo.",
+      "system_role": "Feedback intake and synthesis capability feeding product discovery.",
+      "edge_profile": "web_app_api",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "jira_product_discovery",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "homepage_capability",
+      "source_note": "Modeled as a homepage capability in the Product collection rather than a standalone app of the same weight as Jira or Confluence."
+    },
+    {
+      "id": "focus",
+      "name": "Focus",
+      "family": "strategy",
+      "homepage_positioning": "Enterprise-scale strategic planning that connects strategy to goals, work, people, and funds.",
+      "system_role": "Strategy execution and outcome tracking layer.",
+      "edge_profile": "enterprise_planning",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "goals",
+        "analytics",
+        "jira_align",
+        "rovo"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "talent",
+      "name": "Talent",
+      "family": "strategy",
+      "homepage_positioning": "Future-ready workforce planning.",
+      "system_role": "Workforce and capacity planning layer.",
+      "edge_profile": "enterprise_planning",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "goals",
+        "analytics",
+        "focus"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "jira_align",
+      "name": "Jira Align",
+      "family": "strategy",
+      "homepage_positioning": "Enterprise planning and delivery aligned to strategy.",
+      "system_role": "Enterprise agile planning and portfolio alignment.",
+      "edge_profile": "enterprise_planning",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "goals",
+        "analytics",
+        "jira",
+        "focus"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "bamboo",
+      "name": "Bamboo",
+      "family": "legacy_developer_tools",
+      "homepage_positioning": "Continuous integration, deployment, and release management.",
+      "system_role": "Legacy or alternate CI/CD and release-management path.",
+      "edge_profile": "ci_cd",
+      "platform_dependencies": [
+        "identity",
+        "teams",
+        "analytics",
+        "bitbucket"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "sourcetree",
+      "name": "Sourcetree",
+      "family": "legacy_developer_tools",
+      "homepage_positioning": "Git and Mercurial desktop client.",
+      "system_role": "Local developer workflow client for repositories.",
+      "edge_profile": "desktop_client",
+      "platform_dependencies": [
+        "bitbucket"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "product"
+    },
+    {
+      "id": "marketplace",
+      "name": "Marketplace",
+      "family": "ecosystem",
+      "homepage_positioning": "Connect thousands of apps to Atlassian products.",
+      "system_role": "Extension and partner app ecosystem.",
+      "edge_profile": "marketplace_extension",
+      "platform_dependencies": [
+        "identity",
+        "admin",
+        "billing",
+        "audit"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "ecosystem_resource",
+      "source_note": "Modeled as an ecosystem/resource surface, not as a core software application."
+    },
+    {
+      "id": "community",
+      "name": "Community",
+      "family": "ecosystem",
+      "homepage_positioning": "Learn, connect, and grow with the Atlassian Community.",
+      "system_role": "Adoption, support, and knowledge-sharing network.",
+      "edge_profile": "community_web",
+      "platform_dependencies": [
+        "identity",
+        "search"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "ecosystem_resource",
+      "source_note": "Modeled as an ecosystem/resource surface, not as a core software application."
+    },
+    {
+      "id": "partners",
+      "name": "Partners",
+      "family": "ecosystem",
+      "homepage_positioning": "Consulting, training, and product customization support.",
+      "system_role": "Enterprise adoption and services channel.",
+      "edge_profile": "partner_directory",
+      "platform_dependencies": [
+        "identity",
+        "marketplace",
+        "admin"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "ecosystem_resource",
+      "source_note": "Modeled as an ecosystem/resource surface, not as a core software application."
+    },
+    {
+      "id": "developer_resources",
+      "name": "Developer Resources",
+      "family": "ecosystem",
+      "homepage_positioning": "Developer resources and documentation.",
+      "system_role": "Integration docs, APIs, SDKs, and extension guidance.",
+      "edge_profile": "developer_portal",
+      "platform_dependencies": [
+        "identity",
+        "marketplace",
+        "studio",
+        "search"
+      ],
+      "source_url": "https://www.atlassian.com/software",
+      "object_type": "ecosystem_resource",
+      "source_note": "Modeled as an ecosystem/resource surface, not as a core software application."
+    }
+  ],
+  "edge_profiles": [
+    "web_app_api",
+    "media_video",
+    "git_code",
+    "ci_cd",
+    "service_portal",
+    "public_status",
+    "ai_agent_api",
+    "admin_security",
+    "enterprise_planning",
+    "analytics_api",
+    "catalog_api",
+    "marketplace_extension",
+    "community_web",
+    "partner_directory",
+    "developer_portal",
+    "desktop_client"
+  ]
+}

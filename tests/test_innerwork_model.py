@@ -8,6 +8,8 @@ def test_broker_provision_returns_operation_then_succeeds():
     spec = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
     )
@@ -25,12 +27,16 @@ def test_domain_uniqueness_is_enforced_across_services():
     first = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("shared.example.com",),
         routes=(RouteRule(prefix="/jira", backend=Backend(name="jira", port=8080)),),
     )
     second = EdgeServiceSpec(
         service_id="confluence-web",
         owner="confluence-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("shared.example.com",),
         routes=(RouteRule(prefix="/wiki", backend=Backend(name="confluence", port=8090)),),
     )
@@ -49,6 +55,8 @@ def test_control_plane_renders_deterministic_envoy_resources():
     spec = EdgeServiceSpec(
         service_id="bitbucket-web",
         owner="bitbucket-platform",
+        product_family="software_delivery",
+        edge_profile="git_code",
         domains=("bitbucket.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="bitbucket", port=7990)),),
         features=("access_logs", "rate_limit", "external_auth"),
@@ -79,6 +87,8 @@ def test_invalid_route_prefix_is_rejected_before_rendering():
     spec = EdgeServiceSpec(
         service_id="bad-service",
         owner="edge-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("bad.example.com",),
         routes=(RouteRule(prefix="relative", backend=Backend(name="bad", port=8080)),),
     )
@@ -96,12 +106,16 @@ def test_domain_ownership_is_case_insensitive_and_canonicalized():
     first = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("Shared.Example.Com",),
         routes=(RouteRule(prefix="/jira", backend=Backend(name="jira", port=8080)),),
     )
     second = EdgeServiceSpec(
         service_id="confluence-web",
         owner="confluence-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("shared.example.com",),
         routes=(RouteRule(prefix="/wiki", backend=Backend(name="confluence", port=8090)),),
     )
@@ -121,12 +135,16 @@ def test_invalid_hostname_and_unknown_feature_fail_closed():
     invalid_domain = EdgeServiceSpec(
         service_id="bad-domain",
         owner="edge-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("https://bad.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="bad", port=8080)),),
     )
     unknown_feature = EdgeServiceSpec(
         service_id="bad-feature",
         owner="edge-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("bad-feature.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="bad", port=8080)),),
         features=("externalAuth",),
@@ -141,11 +159,30 @@ def test_invalid_hostname_and_unknown_feature_fail_closed():
     assert "unsupported feature" in broker.last_operation(feature_operation.operation_id).description
 
 
+def test_product_family_edge_profile_mismatch_fails_closed():
+    broker = EdgeBroker()
+    spec = EdgeServiceSpec(
+        service_id="bad-profile",
+        owner="edge-team",
+        product_family="service_management",
+        edge_profile="git_code",
+        domains=("bad-profile.example.com",),
+        routes=(RouteRule(prefix="/", backend=Backend(name="bad", port=8080)),),
+    )
+
+    operation = broker.provision(spec)
+
+    result = broker.last_operation(operation.operation_id)
+    assert result.state == "failed"
+    assert "edge_profile git_code is not allowed for service_management" in result.description
+
 def test_backend_name_port_conflict_is_rejected():
     broker = EdgeBroker()
     spec = EdgeServiceSpec(
         service_id="conflicting-backends",
         owner="edge-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("conflict.example.com",),
         routes=(
             RouteRule(prefix="/a", backend=Backend(name="api", port=8080)),
@@ -165,12 +202,16 @@ def test_snapshot_version_changes_when_existing_service_changes():
     first = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
     )
     second = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8081)),),
     )
@@ -188,6 +229,8 @@ def test_access_logs_are_mandatory_even_when_tenant_omits_feature():
     spec = EdgeServiceSpec(
         service_id="minimal-web",
         owner="edge-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("minimal.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="minimal", port=8080)),),
     )
@@ -204,12 +247,16 @@ def test_owner_change_for_existing_service_requires_transfer_path():
     first = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
     )
     takeover = EdgeServiceSpec(
         service_id="jira-web",
         owner="different-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
     )
@@ -228,6 +275,8 @@ def test_operation_lookup_is_scoped_to_service_and_unknown_safe():
     spec = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
     )
@@ -246,12 +295,16 @@ def test_cross_service_backend_name_port_conflict_is_rejected():
     first = EdgeServiceSpec(
         service_id="jira-web",
         owner="jira-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("jira.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="api", port=8080)),),
     )
     second = EdgeServiceSpec(
         service_id="confluence-web",
         owner="confluence-platform",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("confluence.example.com",),
         routes=(RouteRule(prefix="/", backend=Backend(name="api", port=9090)),),
     )
@@ -269,6 +322,8 @@ def test_routes_are_rendered_by_most_specific_prefix_first():
     spec = EdgeServiceSpec(
         service_id="ordered-web",
         owner="edge-team",
+        product_family="teamwork_core",
+        edge_profile="web_app_api",
         domains=("ordered.example.com",),
         routes=(
             RouteRule(prefix="/", backend=Backend(name="web-root", port=8080)),

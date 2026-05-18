@@ -7,8 +7,75 @@ from typing import Literal
 
 OperationState = Literal["in_progress", "succeeded", "failed", "requires_attention"]
 FeatureName = Literal["external_auth", "rate_limit", "access_logs"]
+ProductFamily = Literal[
+    "teamwork_core",
+    "software_delivery",
+    "service_management",
+    "product_discovery",
+    "strategy",
+    "ecosystem",
+    "legacy_developer_tools",
+]
+EdgeProfile = Literal[
+    "web_app_api",
+    "media_video",
+    "git_code",
+    "ci_cd",
+    "service_portal",
+    "public_status",
+    "ai_agent_api",
+    "admin_security",
+    "enterprise_planning",
+    "analytics_api",
+    "catalog_api",
+    "marketplace_extension",
+    "community_web",
+    "partner_directory",
+    "developer_portal",
+    "desktop_client",
+]
 
 _ALLOWED_FEATURES: frozenset[str] = frozenset({"external_auth", "rate_limit", "access_logs"})
+_ALLOWED_PRODUCT_FAMILIES: frozenset[str] = frozenset(
+    {
+        "teamwork_core",
+        "software_delivery",
+        "service_management",
+        "product_discovery",
+        "strategy",
+        "ecosystem",
+        "legacy_developer_tools",
+    }
+)
+_ALLOWED_EDGE_PROFILES: frozenset[str] = frozenset(
+    {
+        "web_app_api",
+        "media_video",
+        "git_code",
+        "ci_cd",
+        "service_portal",
+        "public_status",
+        "ai_agent_api",
+        "admin_security",
+        "enterprise_planning",
+        "analytics_api",
+        "catalog_api",
+        "marketplace_extension",
+        "community_web",
+        "partner_directory",
+        "developer_portal",
+        "desktop_client",
+    }
+)
+_ALLOWED_PROFILES_BY_FAMILY: dict[str, frozenset[str]] = {
+    "teamwork_core": frozenset({"web_app_api", "media_video", "ai_agent_api"}),
+    "software_delivery": frozenset({"git_code", "ci_cd", "ai_agent_api", "analytics_api"}),
+    "service_management": frozenset({"service_portal", "catalog_api", "public_status", "admin_security"}),
+    "product_discovery": frozenset({"web_app_api", "ai_agent_api"}),
+    "strategy": frozenset({"enterprise_planning"}),
+    "ecosystem": frozenset({"marketplace_extension", "community_web", "partner_directory", "developer_portal"}),
+    "legacy_developer_tools": frozenset({"ci_cd", "desktop_client"}),
+}
 _DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _RESOURCE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 _BACKEND_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
@@ -71,6 +138,8 @@ class EdgeServiceSpec:
 
     service_id: str
     owner: str
+    product_family: str
+    edge_profile: str
     domains: tuple[str, ...]
     routes: tuple[RouteRule, ...]
     features: tuple[str, ...] = field(default_factory=tuple)
@@ -80,6 +149,8 @@ class EdgeServiceSpec:
             self,
             service_id=self.service_id.strip(),
             owner=self.owner.strip(),
+            product_family=self.product_family.strip(),
+            edge_profile=self.edge_profile.strip(),
             domains=tuple(canonical_domain(domain) for domain in self.domains),
             features=tuple(sorted(set(self.features))),
         )
@@ -91,6 +162,13 @@ class EdgeServiceSpec:
             raise ValueError("service_id must match ^[a-z0-9][a-z0-9-]{1,62}$")
         if not self.owner:
             raise ValueError("owner is required")
+        if self.product_family not in _ALLOWED_PRODUCT_FAMILIES:
+            raise ValueError(f"unsupported product_family: {self.product_family}")
+        if self.edge_profile not in _ALLOWED_EDGE_PROFILES:
+            raise ValueError(f"unsupported edge_profile: {self.edge_profile}")
+        allowed_profiles = _ALLOWED_PROFILES_BY_FAMILY[self.product_family]
+        if self.edge_profile not in allowed_profiles:
+            raise ValueError(f"edge_profile {self.edge_profile} is not allowed for {self.product_family}")
         if not self.domains:
             raise ValueError("at least one domain is required")
         if len(set(self.domains)) != len(self.domains):
@@ -114,6 +192,8 @@ class EdgeServiceSpec:
             (
                 self.service_id,
                 self.owner,
+                self.product_family,
+                self.edge_profile,
                 self.domains,
                 tuple((route.prefix, route.backend.name, route.backend.port) for route in self.routes),
                 self.features,

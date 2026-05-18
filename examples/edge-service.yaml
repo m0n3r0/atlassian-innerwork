@@ -6,6 +6,8 @@ metadata:
 spec:
   service_id: jira-web
   owner: jira-platform
+  product_family: teamwork_core
+  edge_profile: web_app_api
   domains:
     - jira.example.com
   routes:

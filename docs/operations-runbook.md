@@ -1,17 +1,27 @@
 # Operations Runbook
 
-This runbook describes how to operate the production-grade version of the Atlassian Innerwork edge platform.
+This runbook describes how to operate the production-grade version of the Atlassian Innerwork platform: product-suite map, broker/control plane, regional edge, and shared platform surfaces.
 
 ## Service map
 
-- Broker API: accepts and validates tenant edge intent.
+- Product catalog: structured source of products, homepage capabilities, ecosystem resources, collections, platform capabilities, product families, and edge profiles.
+- Broker API: accepts and validates tenant/product edge intent.
 - Worker queue: executes cloud-side provisioning tasks.
-- Durable state: stores service specs, domain ownership, operations, snapshots, rollouts, and audit events.
+- Durable state: stores service specs, product profiles, domain ownership, route ownership, operations, snapshots, rollouts, and audit events.
 - Control plane: renders and publishes xDS snapshots.
 - Data plane: regional Envoy fleets plus local sidecars.
+- Platform services: identity, teams, goals, search, chat, analytics, admin, marketplace/extension controls.
 - Image/IaC pipeline: builds and deploys proxy runtime infrastructure.
 
 ## Golden dashboards
+
+### Product-suite map
+
+- products by family;
+- products missing owner/profile/source;
+- product-profile changes pending review;
+- product-to-platform dependency coverage;
+- stale source-review age.
 
 ### Broker
 
@@ -19,7 +29,8 @@ This runbook describes how to operate the production-grade version of the Atlass
 - validation failures by reason;
 - operation duration p50/p95/p99;
 - operation terminal state count;
-- idempotency replay count.
+- idempotency replay count;
+- product-family policy rejections.
 
 ### Worker queue
 
@@ -36,7 +47,8 @@ This runbook describes how to operate the production-grade version of the Atlass
 - xDS ACK/NACK count;
 - proxy version skew;
 - rollback count;
-- snapshot validation failures.
+- snapshot validation failures;
+- product-profile filter coverage.
 
 ### Envoy/data plane
 
@@ -46,7 +58,17 @@ This runbook describes how to operate the production-grade version of the Atlass
 - overload manager activation;
 - circuit breaker opens;
 - TLS/certificate errors;
-- sidecar call latency and failures.
+- sidecar call latency and failures;
+- per-product-family SLO burn.
+
+### Shared platform
+
+- identity/auth failures;
+- search indexing lag and permission-filter errors;
+- Rovo/agent tool-call failures and denials;
+- marketplace app error/rate-limit counts;
+- analytics pipeline freshness;
+- admin/Guard policy push status.
 
 ## Incident: bad tenant config rejected by broker
 
@@ -60,7 +82,25 @@ Actions:
 1. Inspect operation id from deploy output.
 2. Read broker audit entry for the operation.
 3. Return validation reason to product team.
-4. Do not bypass validation unless the platform owner approves a schema/policy change.
+4. Check whether the failure is schema, ownership, product-profile, or policy related.
+5. Do not bypass validation unless the platform owner approves a schema/policy change.
+
+## Incident: product-profile mismatch
+
+Symptoms:
+
+- media, Git, admin, status-page, or AI-agent route behaves like a generic web route;
+- auth/rate-limit/cache behavior differs from expected profile;
+- product-family dashboards show abnormal errors after a config change.
+
+Actions:
+
+1. Identify affected product family and route.
+2. Compare current service profile to expected profile in the product catalog.
+3. Freeze rollout for affected service/family.
+4. Re-render candidate snapshot with corrected profile.
+5. Canary and verify profile-specific probes before global rollout.
+6. Add regression coverage for the profile mismatch.
 
 ## Incident: worker backlog grows
 
@@ -109,7 +149,25 @@ Actions:
 3. Roll back snapshot for affected fleet or region.
 4. Check backend health to distinguish platform vs product outage.
 5. If sidecar-related, verify sidecar config version and failure mode.
-6. File post-incident action item for missing rollout health gate.
+6. Check whether only one product family is affected; if so, apply profile-specific mitigation.
+7. File post-incident action item for missing rollout health gate.
+
+## Incident: cross-product search or AI permission leak
+
+Symptoms:
+
+- user sees object snippets from a product/site they cannot access;
+- Rovo/agent answer references hidden content;
+- audit shows a tool call outside expected product scope.
+
+Actions:
+
+1. Disable affected search/agent connector or tool class.
+2. Preserve audit records and retrieval traces.
+3. Verify source-product permission checks for the object type.
+4. Rebuild affected index partitions if permissions were embedded incorrectly.
+5. Add a deny-by-default regression test for stale/ambiguous permissions.
+6. Notify security/compliance according to severity.
 
 ## Incident: control plane unavailable
 
@@ -138,19 +196,22 @@ Actions:
 
 ## Release checklist
 
+- Product catalog/profile changes reviewed.
 - Schema migrations applied and reversible.
 - xDS render tests pass.
 - Envoy validation passes.
 - Canary region selected.
 - Rollback snapshot/image available.
 - Dashboards and alerts updated.
-- On-call handoff includes expected changes and blast radius.
+- On-call handoff includes expected changes, product family impact, and blast radius.
 
 ## Post-incident review prompts
 
 - Did the broker reject invalid input early enough?
+- Did the product profile match the route's real behavior?
 - Did the control plane validate and canary the rendered config?
 - Did the data plane preserve last-known-good behavior?
+- Did cross-product search/AI respect source permissions?
 - Did dashboards identify the failure within the SLO detection window?
 - Did operators have an obvious rollback command?
 - Does the codebase need decoupling where churn concentrated?
