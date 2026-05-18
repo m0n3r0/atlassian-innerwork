@@ -12,6 +12,8 @@ It does not contain Atlassian source code, private diagrams, private configurati
 2. `docs/product-system-map.md` — reverse-engineered map of the product suite.
 3. `docs/grand-design.md` — production-grade platform architecture.
 4. `docs/architecture.html` — standalone visual diagram.
+5. `docs/production-oss-grand-design.md` — Jira + Confluence-inspired phases from idea to production-ready OSS.
+6. `docs/autonomous-kanban-playbook.md` — autonomous Kanban execution loop with hallucination gates.
 
 ## What is inside
 
@@ -20,6 +22,8 @@ It does not contain Atlassian source code, private diagrams, private configurati
 - `docs/grand-design.md` — polished production architecture and operating model.
 - `docs/architecture.html` — standalone dark SVG architecture diagram.
 - `docs/production-grade-roadmap.md` — staged path from prototype to production.
+- `docs/production-oss-grand-design.md` — complete idea-to-production phase design for a clean-room work + knowledge OSS app inspired by Jira + Confluence.
+- `docs/autonomous-kanban-playbook.md` — Kanban playbook for autonomous phase execution, review, iteration, and stop conditions.
 - `docs/production-readiness-checklist.md` — launch checklist for the hardened platform.
 - `docs/operations-runbook.md` — incident response and operational playbooks.
 - `docs/threat-model.md` — trust boundaries, risks, and mitigations.
@@ -29,6 +33,7 @@ It does not contain Atlassian source code, private diagrams, private configurati
 - `research/software-page-extract.md` — normalized extraction from the Atlassian software homepage.
 - `src/innerwork/` — executable Python model for the broker/control-plane contract.
 - `data/product_catalog.json` — structured product/collection/platform taxonomy used by tests and docs.
+- `data/production_oss_phases.json` — machine-readable phase catalog for the production OSS grand design.
 - `tests/` — regression tests for the core invariants.
 
 ## Quick start
@@ -40,7 +45,7 @@ uvx pytest -q
 Expected:
 
 ```text
-24 passed
+30 passed
 ```
 
 ## Core idea
