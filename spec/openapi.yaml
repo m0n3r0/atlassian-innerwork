@@ -1,0 +1,215 @@
+openapi: 3.1.0
+info:
+  title: Atlassian Innerwork Broker API
+  version: 0.1.0
+  description: OSB-inspired API for self-service edge exposure.
+servers:
+  - url: https://edge-broker.example.com
+security:
+  - bearerAuth: []
+paths:
+  /v2/catalog:
+    get:
+      summary: List available edge service offerings
+      responses:
+        '200':
+          description: Catalog response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Catalog'
+  /v2/service_instances/{instance_id}:
+    put:
+      summary: Provision or replace an edge service instance
+      parameters:
+        - $ref: '#/components/parameters/InstanceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeServiceSpec'
+      responses:
+        '202':
+          description: Accepted for asynchronous provisioning
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationAccepted'
+        '409':
+          description: Ownership conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      summary: Update an existing edge service instance
+      parameters:
+        - $ref: '#/components/parameters/InstanceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EdgeServiceSpec'
+      responses:
+        '202':
+          description: Accepted for asynchronous update
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationAccepted'
+    delete:
+      summary: Deprovision an edge service instance
+      parameters:
+        - $ref: '#/components/parameters/InstanceId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Accepted for asynchronous deprovisioning
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationAccepted'
+  /v2/service_instances/{instance_id}/last_operation:
+    get:
+      summary: Poll the latest operation state for a service instance
+      parameters:
+        - $ref: '#/components/parameters/InstanceId'
+        - name: operation
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Operation state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationState'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    InstanceId:
+      name: instance_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9][a-z0-9-]{1,62}$'
+    IdempotencyKey:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+  schemas:
+    Catalog:
+      type: object
+      required: [services]
+      properties:
+        services:
+          type: array
+          items:
+            type: object
+            required: [id, name, plans]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              plans:
+                type: array
+                items:
+                  type: object
+                  required: [id, name]
+                  properties:
+                    id:
+                      type: string
+                    name:
+                      type: string
+                  additionalProperties: false
+          additionalProperties: false
+    EdgeServiceSpec:
+      type: object
+      required: [service_id, owner, domains, routes]
+      properties:
+        service_id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{1,62}$'
+        owner:
+          type: string
+        domains:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            format: hostname
+        routes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RouteRule'
+        features:
+          type: array
+          uniqueItems: true
+          items:
+            enum: [external_auth, rate_limit, access_logs]
+      additionalProperties: false
+    RouteRule:
+      type: object
+      required: [prefix, backend]
+      properties:
+        prefix:
+          type: string
+          pattern: '^/'
+        backend:
+          type: object
+          required: [name, port]
+          properties:
+            name:
+              type: string
+              pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+            port:
+              type: integer
+              minimum: 1
+              maximum: 65535
+          additionalProperties: false
+      additionalProperties: false
+    OperationAccepted:
+      type: object
+      required: [operation]
+      properties:
+        operation:
+          type: string
+      additionalProperties: false
+    OperationState:
+      type: object
+      required: [state, description]
+      properties:
+        state:
+          enum: [in_progress, succeeded, failed, requires_attention]
+        operation_id:
+          type: string
+        service_id:
+          type: string
+        description:
+          type: string
+      additionalProperties: false
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+      additionalProperties: false

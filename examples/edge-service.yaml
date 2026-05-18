@@ -1,0 +1,19 @@
+apiVersion: edge.platform/v1
+kind: EdgeService
+metadata:
+  name: jira-web
+  owner: jira-platform
+spec:
+  service_id: jira-web
+  owner: jira-platform
+  domains:
+    - jira.example.com
+  routes:
+    - prefix: /
+      backend:
+        name: jira
+        port: 8080
+  features:
+    - external_auth
+    - rate_limit
+    - access_logs
