@@ -16,7 +16,7 @@ This phase 0 output relies only on the following repository sources:
 
 All Atlassian product references in this design map back to `data/product_catalog.json`. Where evidence is insufficient we write "not supported by current public sources" instead of guessing.
 
-## 2. Selected product pair
+## 2. Selected product pair and explicit scope
 
 The selected inspiration pair is **Jira + Confluence**, exactly as required by the plan. The catalog roles used here are quoted directly from `data/product_catalog.json`:
 
@@ -26,6 +26,18 @@ The selected inspiration pair is **Jira + Confluence**, exactly as required by t
 | `confluence` | `teamwork_core` | Knowledge graph and durable decision memory. | identity, teams, search, analytics, rovo |
 
 Both products live in the same catalog family (`teamwork_core`) and share five of six platform dependencies. That overlap is exactly what makes the pair the smallest high-leverage exercise of the system-of-work loop: identity, permissions, search, analytics, and AI-readiness are forced to be unified across two distinct graphs.
+
+**Scope boundary:** we are building **Innerwork**, a clean-room work-and-knowledge app inspired by the public roles above. Not building Bitbucket, Trello, Loom, Jira Service Management, Statuspage, Guard, Jira Align, or any other Atlassian portfolio product. Those catalog entries remain research context only and must not be treated as MVP implementation scope.
+
+The product shape is therefore:
+
+- Jira-inspired work graph: projects, work items, workflow transitions, comments, ownership, and audit.
+- Confluence-inspired knowledge graph: spaces, pages, version history, comments, decisions, and audit.
+- Cross-graph integration: bidirectional links between work items and pages, one identity model, one permission model, one search boundary, and one audit stream.
+
+The current executable repository is one layer below that final product: a Docker-runnable backend proof of concept for the platform/broker/control-plane layer that will host and protect the work-and-knowledge application. A full user-facing work-item/page frontend is roadmap work, not current reality.
+
+See `docs/product-scope.md` for the concise scope statement and naming rule.
 
 ## 3. Product thesis
 
@@ -44,7 +56,18 @@ The open-source application we are designing is a **work-and-knowledge operating
 - Multi-cloud and enterprise-portfolio features before the single-cloud, single-tenant production posture is stable.
 - Building an LLM/agent platform before the deterministic data, API, permission, and audit layers are sound.
 
-### 3.3 Clean-room rules
+### 3.3 Current frontend/backend reality
+
+The runnable PoC today has:
+
+- **Frontend:** a small server-rendered landing page at `/` plus FastAPI's generated API documentation at `/docs`. This is enough to inspect the backend and manually exercise APIs, but it is not the final work-item/page product UI.
+- **Backend:** FastAPI endpoints, Pydantic request/response models, an idempotent broker, local SQLite persistence, product/profile validation, and deterministic control-plane snapshot rendering.
+- **CLI:** `innerwork validate`, `innerwork render`, and `innerwork serve` for contributor workflows.
+- **Container:** `Dockerfile` and `docker-compose.yml` run the backend PoC with host-mounted SQLite state.
+
+The roadmap now separates the containerized platform PoC from the later product MVP so contributors do not confuse the current backend shell with the final Innerwork user experience.
+
+### 3.4 Clean-room rules
 
 - Use the public Atlassian software-homepage product catalog only for inspiration about *responsibilities*, not for any private-architecture claims.
 - Do not invent Atlassian-internal services, schemas, team names, metrics, or compliance certifications.
@@ -60,41 +83,36 @@ Allowed platform-capability vocabulary (drawn from `docs/product-system-map.md` 
 
 Any design statement that references a capability outside that list must either add it to the vocabulary with a source citation or be rewritten.
 
-## 5. Lifecycle phase model (0–10)
+## 5. Lifecycle phase model (A–J)
 
-The phase catalog is encoded in `data/production_oss_phases.json`. Every phase carries:
-
-- `objective`
-- `jira_inspired_requirements`
-- `confluence_inspired_requirements`
-- `cross_product_integration_requirements`
-- `build_artifacts`
-- `acceptance_gates`
-- `anti_hallucination_checks`
-- `kanban_child_task_shape`
-- `exit_criteria`
+The roadmap is split into application phases so the current Docker/backend PoC is not confused with the later work-item/page product. The machine-readable historical 0–10 phase catalog remains in `data/production_oss_phases.json`, but the active product roadmap should be read as the A–J sequence below.
 
 ### 5.1 Phases at a glance
 
-| # | Name | Headline objective |
+| Phase | Name | Headline objective |
 | --- | --- | --- |
-| 0 | Idea and public-source grounding | Lock thesis to repo-grounded sources; declare scope and non-scope. |
-| 1 | Product thesis, target users, non-goals | One paragraph + three lists; no vendor-clone language. |
-| 2 | Domain model and information architecture | Minimum durable domain across both graphs under shared identity. |
-| 3 | API contract and permission model | OpenAPI surface, RBAC, idempotency, audit events per endpoint. |
-| 4 | MVP vertical slice | End-to-end: create work item, create page, link them, permission-filtered list. |
-| 5 | Collaboration, notifications, import/export | Comments, mentions, notifications, round-trippable JSON portability. |
-| 6 | Search, analytics, AI-ready context | Permission-respecting search; explicit AI context boundary with redaction. |
-| 7 | Reliability, security, privacy, compliance | Threat model, audit completeness, backup drills, privacy fields. |
-| 8 | Deployment, operations, SLOs, observability | Reproducible deployment, SLOs, signed releases, rollback drills. |
-| 9 | OSS governance, contributor experience, packaging, docs | License, CoC, security policy, governance, tagged releases. |
-| 10 | Beta, migration, launch, post-launch iteration | Beta program, migration tooling, post-launch metrics loop. |
+| A | Dockerized platform PoC | Run the current backend in Docker with local SQLite and a visible API shell. |
+| B | Work-and-knowledge MVP | Implement projects, work items, spaces, pages, and cross-links. |
+| C | Product frontend | Build a real web UI for work items, pages, links, and search. |
+| D | Permission, identity, and audit | Add local authn/authz, scoped permissions, and append-only audit events. |
+| E | Durable worker and operations | Add async workers, retries, replay, backups, and drift/reconciliation workflows. |
+| F | Search, collaboration, import/export | Add comments, mentions, notifications, permissioned search, and portable JSON import/export. |
+| G | AI-ready context boundary | Add redacted, permission-filtered context endpoints for assistants without binding to a vendor LLM. |
+| H | Production deployment and observability | Add Postgres mode, migrations, metrics, traces, dashboards, SLOs, release artifacts, and rollback drills. |
+| I | OSS governance and extension model | Add governance, security policy, extension points, docs site, and tagged releases. |
+| J | Beta and migration loop | Run beta, test migrations, dogfood the app, and publish iteration cadence. |
 
 ### 5.2 How to read a phase
 
-For phase N, the `data/production_oss_phases.json` entry is the source of truth. This markdown summary exists for human readability; tests in `tests/test_production_oss_phases.py` (added in the engineering phase of this task graph) validate the JSON against the same structural requirements documented above.
+Each phase must state:
 
-Every phase ends with `block_reason_on_finish: review-required` so the orchestrator gates progression rather than auto-completing work that still needs human or reviewer judgment.
+- product scope: which part of Innerwork it advances;
+- frontend/backend impact;
+- Docker/local-run impact;
+- tests and acceptance gates;
+- clean-room checks proving it does not clone vendor UI, schemas, or private APIs.
+
+Every phase remains review-gated before the next phase starts.
 
 ## 6. Anti-hallucination checklist (cross-phase)
 
@@ -108,7 +126,9 @@ These checks apply to every phase and every downstream Kanban child task. The ph
 
 ## 7. Pointers
 
-- Machine-readable phase catalog: `data/production_oss_phases.json`.
+- Machine-readable historical phase catalog: `data/production_oss_phases.json`.
+- Concise product boundary: `docs/product-scope.md`.
+- Docker PoC instructions: `docs/docker-poc.md`.
 - Public-source catalog: `data/product_catalog.json`.
 - Reverse-engineered product/platform map: `docs/product-system-map.md`.
 - Existing production roadmap for the underlying edge/control-plane platform: `docs/production-grade-roadmap.md`.

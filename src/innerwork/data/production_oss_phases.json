@@ -11,25 +11,50 @@
     ],
     "caveat": "Clean-room product blueprint inspired by the public Jira + Confluence pairing. Not an Atlassian private-implementation claim, not a clone, and not a trademarked product."
   },
-  "selected_products": ["jira", "confluence"],
+  "selected_products": [
+    "jira",
+    "confluence"
+  ],
   "selected_product_grounding": [
     {
       "product_id": "jira",
       "catalog_role": "Primary work graph and workflow engine.",
       "catalog_family": "teamwork_core",
-      "catalog_dependencies": ["identity", "teams", "goals", "search", "analytics", "rovo"],
+      "catalog_dependencies": [
+        "identity",
+        "teams",
+        "goals",
+        "search",
+        "analytics",
+        "rovo"
+      ],
       "evidence_path": "data/product_catalog.json#/products/jira"
     },
     {
       "product_id": "confluence",
       "catalog_role": "Knowledge graph and durable decision memory.",
       "catalog_family": "teamwork_core",
-      "catalog_dependencies": ["identity", "teams", "search", "analytics", "rovo"],
+      "catalog_dependencies": [
+        "identity",
+        "teams",
+        "search",
+        "analytics",
+        "rovo"
+      ],
       "evidence_path": "data/product_catalog.json#/products/confluence"
     }
   ],
   "allowed_platform_capabilities": [
-    "home", "goals", "teams", "studio", "search", "chat", "analytics", "admin", "identity", "audit"
+    "home",
+    "goals",
+    "teams",
+    "studio",
+    "search",
+    "chat",
+    "analytics",
+    "admin",
+    "identity",
+    "audit"
   ],
   "product_thesis": {
     "name_placeholder": "innerwork-os",
@@ -83,7 +108,10 @@
         "title": "phase 0: PM product selection and production OSS phase specification",
         "assignee": "atlassianpm",
         "parent_phase": null,
-        "deliverables": ["docs/production-oss-grand-design.md", "data/production_oss_phases.json"],
+        "deliverables": [
+          "docs/production-oss-grand-design.md",
+          "data/production_oss_phases.json"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -121,7 +149,9 @@
         "title": "phase 1: thesis and non-goals",
         "assignee": "atlassianpm",
         "parent_phase": 0,
-        "deliverables": ["docs/production-oss-grand-design.md (updated)"],
+        "deliverables": [
+          "docs/production-oss-grand-design.md (updated)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -164,7 +194,10 @@
         "title": "phase 2: domain model and IA",
         "assignee": "atlassianeng",
         "parent_phase": 1,
-        "deliverables": ["docs/production-oss-grand-design.md (updated)", "spec/openapi.yaml (planned extension)"],
+        "deliverables": [
+          "docs/production-oss-grand-design.md (updated)",
+          "spec/openapi.yaml (planned extension)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -205,7 +238,10 @@
         "title": "phase 3: API and permissions",
         "assignee": "atlassianeng",
         "parent_phase": 2,
-        "deliverables": ["spec/openapi.yaml", "docs/production-oss-grand-design.md (updated)"],
+        "deliverables": [
+          "spec/openapi.yaml",
+          "docs/production-oss-grand-design.md (updated)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -247,7 +283,10 @@
         "title": "phase 4: MVP vertical slice",
         "assignee": "atlassianeng",
         "parent_phase": 3,
-        "deliverables": ["src/innerwork/* (planned)", "tests/test_mvp_slice.py (planned)"],
+        "deliverables": [
+          "src/innerwork/* (planned)",
+          "tests/test_mvp_slice.py (planned)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -288,7 +327,11 @@
         "title": "phase 5: collaboration and import/export",
         "assignee": "atlassianeng",
         "parent_phase": 4,
-        "deliverables": ["src/innerwork/notify.py (planned)", "src/innerwork/portability.py (planned)", "docs update"],
+        "deliverables": [
+          "src/innerwork/notify.py (planned)",
+          "src/innerwork/portability.py (planned)",
+          "docs update"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -329,7 +372,11 @@
         "title": "phase 6: search analytics and AI boundaries",
         "assignee": "atlassianeng",
         "parent_phase": 5,
-        "deliverables": ["src/innerwork/search.py (planned)", "src/innerwork/ai_context.py (planned)", "docs update"],
+        "deliverables": [
+          "src/innerwork/search.py (planned)",
+          "src/innerwork/ai_context.py (planned)",
+          "docs update"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -371,7 +418,10 @@
         "title": "phase 7: reliability security privacy compliance",
         "assignee": "atlassianeng",
         "parent_phase": 6,
-        "deliverables": ["docs/threat-model.md (updated)", "scripts/backup_restore (planned)"],
+        "deliverables": [
+          "docs/threat-model.md (updated)",
+          "scripts/backup_restore (planned)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -411,7 +461,10 @@
         "title": "phase 8: deploy ops SLOs observability",
         "assignee": "atlassianeng",
         "parent_phase": 7,
-        "deliverables": ["docs/operations-runbook.md (updated)", "ci release workflow (planned)"],
+        "deliverables": [
+          "docs/operations-runbook.md (updated)",
+          "ci release workflow (planned)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -450,7 +503,11 @@
         "title": "phase 9: governance and packaging",
         "assignee": "atlassianeng",
         "parent_phase": 8,
-        "deliverables": ["CONTRIBUTING.md (updated)", "GOVERNANCE.md (planned)", "release packaging"],
+        "deliverables": [
+          "CONTRIBUTING.md (updated)",
+          "GOVERNANCE.md (planned)",
+          "release packaging"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -490,7 +547,10 @@
         "title": "phase 10: beta launch and iteration",
         "assignee": "atlassianpm",
         "parent_phase": 9,
-        "deliverables": ["docs/launch-plan.md (planned)", "migration tooling (planned)"],
+        "deliverables": [
+          "docs/launch-plan.md (planned)",
+          "migration tooling (planned)"
+        ],
         "block_reason_on_finish": "review-required"
       },
       "exit_criteria": [
@@ -499,5 +559,123 @@
         "Post-launch iteration cadence is in place."
       ]
     }
-  ]
+  ],
+  "active_roadmap": {
+    "schema_version": "2026-05-19",
+    "current_phase": "A",
+    "product_scope": "Innerwork: Jira/Confluence-inspired work graph plus knowledge graph with shared identity, permissions, search, links, and audit. Other Atlassian portfolio products remain catalog context only.",
+    "phases": [
+      {
+        "id": "A",
+        "name": "Dockerized platform PoC",
+        "objective": "Run the current FastAPI backend in Docker with local SQLite persistence and a visible API shell.",
+        "frontend": "Server-rendered landing page plus generated API docs; no dedicated product UI yet.",
+        "backend": "FastAPI broker, idempotency, SQLite state, policy profiles, deterministic control-plane snapshots.",
+        "exit_criteria": [
+          "docker compose up --build starts the service",
+          "/healthz, /docs, and /openapi.json are reachable",
+          "demo service intent persists across restart"
+        ]
+      },
+      {
+        "id": "B",
+        "name": "Work-and-knowledge MVP",
+        "objective": "Implement projects, work items, workflow states, spaces, pages, versions, comments, and links.",
+        "frontend": "May still use API docs or a minimal shell; real product UI waits for Phase C.",
+        "backend": "Add product-domain APIs and SQLite persistence for both graphs.",
+        "exit_criteria": [
+          "create project/work item/space/page/link from Docker demo",
+          "restart preserves MVP entities"
+        ]
+      },
+      {
+        "id": "C",
+        "name": "Product frontend",
+        "objective": "Build a real browser UI for work items, pages, links, and search.",
+        "frontend": "Dedicated product UI replaces Swagger as the primary demo surface.",
+        "backend": "Stabilize typed API client/OpenAPI compatibility.",
+        "exit_criteria": [
+          "user completes MVP flow without curl or Swagger UI",
+          "no vendor branding or trade dress"
+        ]
+      },
+      {
+        "id": "D",
+        "name": "Permission, identity, and audit",
+        "objective": "Add local authn/authz, scoped permissions, and append-only audit events.",
+        "frontend": "Login and permission-aware views.",
+        "backend": "Users, groups, teams, project/space scopes, audit stream.",
+        "exit_criteria": [
+          "permission-denied paths tested",
+          "all mutations emit audit events"
+        ]
+      },
+      {
+        "id": "E",
+        "name": "Durable worker and operations",
+        "objective": "Add async workers, retries, replay, backups, and drift/reconciliation workflows.",
+        "frontend": "Operator status surfaces for operation history and replay.",
+        "backend": "Queue abstraction, retry/backoff, poison queue, backup/restore.",
+        "exit_criteria": [
+          "worker crash resumes safely",
+          "backup restores into clean Docker environment"
+        ]
+      },
+      {
+        "id": "F",
+        "name": "Search, collaboration, import/export",
+        "objective": "Add permissioned search, collaboration features, and portable import/export.",
+        "frontend": "Search, comments, mentions, notification views.",
+        "backend": "Search index abstraction, notification dispatcher, import/export schema.",
+        "exit_criteria": [
+          "search hides unauthorized objects",
+          "import/export round trip passes"
+        ]
+      },
+      {
+        "id": "G",
+        "name": "AI-ready context boundary",
+        "objective": "Expose permission-filtered, redacted context endpoints for assistants without depending on a vendor LLM.",
+        "frontend": "Optional assistant/context inspection surfaces.",
+        "backend": "Context API with provenance, token budget, and redaction.",
+        "exit_criteria": [
+          "unauthorized objects excluded",
+          "redaction and provenance tested"
+        ]
+      },
+      {
+        "id": "H",
+        "name": "Production deployment and observability",
+        "objective": "Add Postgres, migrations, observability, release artifacts, SLOs, and rollback drills.",
+        "frontend": "Production build/deploy path and dashboards.",
+        "backend": "Postgres mode, migrations, metrics, traces, release workflow.",
+        "exit_criteria": [
+          "staging deployment reproducible",
+          "rollback drill passes"
+        ]
+      },
+      {
+        "id": "I",
+        "name": "OSS governance and extension model",
+        "objective": "Make the project community-runnable with governance, security policy, extension points, docs, and releases.",
+        "frontend": "Docs site and extension examples.",
+        "backend": "Plugin/extension contracts where needed.",
+        "exit_criteria": [
+          "external contributor can land documented PR",
+          "tagged release installs cleanly"
+        ]
+      },
+      {
+        "id": "J",
+        "name": "Beta and migration loop",
+        "objective": "Run beta, test migrations, dogfood the app, and publish iteration cadence.",
+        "frontend": "Beta onboarding/offboarding and feedback workflows.",
+        "backend": "Migration tools and dogfooding metrics.",
+        "exit_criteria": [
+          "synthetic migration completes end-to-end",
+          "beta feedback triaged through Innerwork"
+        ]
+      }
+    ]
+  }
 }

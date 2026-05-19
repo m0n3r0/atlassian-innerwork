@@ -1,5 +1,13 @@
 # Production Readiness Checklist
 
+## Docker PoC and app scope
+
+- [x] Dockerfile builds a runnable single-container backend PoC.
+- [x] Docker Compose exposes the app on port 8000 and persists SQLite state under `.innerwork/`.
+- [x] Frontend/backend boundary is documented: current frontend shell is `/` + `/docs`; backend is FastAPI broker/control-plane.
+- [x] MVP product scope is explicit: Innerwork = Jira/Confluence-inspired work graph + knowledge graph only.
+- [x] Non-MVP Atlassian products are marked catalog context, not implementation scope.
+
 ## Product-suite map
 
 - [ ] Every public product/capability/resource surface has an object type, family, source URL, and public positioning.
