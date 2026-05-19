@@ -70,10 +70,14 @@ _ALLOWED_EDGE_PROFILES: frozenset[str] = frozenset(
 _ALLOWED_PROFILES_BY_FAMILY: dict[str, frozenset[str]] = {
     "teamwork_core": frozenset({"web_app_api", "media_video", "ai_agent_api"}),
     "software_delivery": frozenset({"git_code", "ci_cd", "ai_agent_api", "analytics_api"}),
-    "service_management": frozenset({"service_portal", "catalog_api", "public_status", "admin_security"}),
+    "service_management": frozenset(
+        {"service_portal", "catalog_api", "public_status", "admin_security"}
+    ),
     "product_discovery": frozenset({"web_app_api", "ai_agent_api"}),
     "strategy": frozenset({"enterprise_planning"}),
-    "ecosystem": frozenset({"marketplace_extension", "community_web", "partner_directory", "developer_portal"}),
+    "ecosystem": frozenset(
+        {"marketplace_extension", "community_web", "partner_directory", "developer_portal"}
+    ),
     "legacy_developer_tools": frozenset({"ci_cd", "desktop_client"}),
 }
 _DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -168,7 +172,9 @@ class EdgeServiceSpec:
             raise ValueError(f"unsupported edge_profile: {self.edge_profile}")
         allowed_profiles = _ALLOWED_PROFILES_BY_FAMILY[self.product_family]
         if self.edge_profile not in allowed_profiles:
-            raise ValueError(f"edge_profile {self.edge_profile} is not allowed for {self.product_family}")
+            raise ValueError(
+                f"edge_profile {self.edge_profile} is not allowed for {self.product_family}"
+            )
         if not self.domains:
             raise ValueError("at least one domain is required")
         if len(set(self.domains)) != len(self.domains):
@@ -195,7 +201,10 @@ class EdgeServiceSpec:
                 self.product_family,
                 self.edge_profile,
                 self.domains,
-                tuple((route.prefix, route.backend.name, route.backend.port) for route in self.routes),
+                tuple(
+                    (route.prefix, route.backend.name, route.backend.port)
+                    for route in self.routes
+                ),
                 self.features,
             )
         ).encode("utf-8")

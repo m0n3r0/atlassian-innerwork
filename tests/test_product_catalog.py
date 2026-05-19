@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 _ALLOWED_PLATFORM_DEPENDENCIES = {
     "identity",
     "teams",
@@ -151,7 +150,16 @@ def test_expected_cloud_platform_capabilities_are_locked():
     catalog = _catalog()
     platform_ids = {capability["id"] for capability in catalog["platform_capabilities"]}
 
-    assert platform_ids == {"home", "goals", "teams", "studio", "search", "chat", "analytics", "admin"}
+    assert platform_ids == {
+        "home",
+        "goals",
+        "teams",
+        "studio",
+        "search",
+        "chat",
+        "analytics",
+        "admin",
+    }
 
 
 def test_allowed_shared_dependencies_are_documented():

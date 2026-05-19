@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 
 from .broker import EdgeBroker
-from .model import EnvoyCluster, EnvoyListener, EnvoySnapshot, EnvoyVirtualHost
-
+from .model import EdgeServiceSpec, EnvoyCluster, EnvoyListener, EnvoySnapshot, EnvoyVirtualHost
 
 _OPTIONAL_FEATURE_FILTERS = {
     "external_auth": "external_auth",
@@ -32,7 +32,12 @@ class ControlPlane:
                 EnvoyVirtualHost(
                     name=service.service_id,
                     domains=service.domains,
-                    routes=tuple(sorted(service.routes, key=lambda route: (-len(route.prefix), route.prefix))),
+                    routes=tuple(
+                        sorted(
+                            service.routes,
+                            key=lambda route: (-len(route.prefix), route.prefix),
+                        )
+                    ),
                     filters=service_filters,
                 )
             )
@@ -68,6 +73,6 @@ class ControlPlane:
         return tuple(filters)
 
 
-def _snapshot_version(services: object) -> str:
+def _snapshot_version(services: Iterable[EdgeServiceSpec]) -> str:
     payload = repr(tuple(service.content_hash() for service in services)).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()[:12]

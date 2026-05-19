@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "atlassian-innerwork"
 version = "0.1.0"
@@ -6,6 +10,23 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "m0n3r0" }]
+dependencies = [
+    "fastapi>=0.136.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.13.4",
+    "pyyaml>=6.0.3",
+    "uvicorn[standard]>=0.47.0",
+]
+
+[project.scripts]
+innerwork = "innerwork.cli:main"
+
+[project.optional-dependencies]
+server = ["uvicorn[standard]>=0.47.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["innerwork"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -14,3 +35,19 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
+reportMissingTypeStubs = false
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.409",
+    "pytest>=9.0.3",
+    "ruff>=0.15.13",
+]

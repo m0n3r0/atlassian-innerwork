@@ -1,4 +1,4 @@
-"""Executable model for an Atlassian-style edge platform."""
+"""Executable model and live app for an Atlassian-style edge platform."""
 
 from .broker import EdgeBroker
 from .control_plane import ControlPlane
