@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-
 REQUIRED_PHASE_FIELDS = {
     "id",
     "name",
@@ -33,7 +32,10 @@ def test_selected_products_are_exactly_jira_and_confluence_and_grounded():
     assert phase_catalog["selected_products"] == ["jira", "confluence"]
     assert set(phase_catalog["selected_products"]) <= product_ids
 
-    grounding = {entry["product_id"]: entry for entry in phase_catalog["selected_product_grounding"]}
+    grounding = {
+        entry["product_id"]: entry
+        for entry in phase_catalog["selected_product_grounding"]
+    }
     assert set(grounding) == {"jira", "confluence"}
     assert grounding["jira"]["catalog_role"] == "Primary work graph and workflow engine."
     assert grounding["confluence"]["catalog_role"] == "Knowledge graph and durable decision memory."
@@ -80,7 +82,18 @@ def test_phase_product_references_are_catalog_grounded_and_bounded():
     allowed_tokens = selected | platform_ids | allowed_platform | allowed_dependency_tokens
 
     assert selected == {"jira", "confluence"}
-    assert allowed_platform >= {"home", "goals", "teams", "studio", "search", "chat", "analytics", "admin", "identity", "audit"}
+    assert allowed_platform >= {
+        "home",
+        "goals",
+        "teams",
+        "studio",
+        "search",
+        "chat",
+        "analytics",
+        "admin",
+        "identity",
+        "audit",
+    }
 
     forbidden_product_tokens = {
         product["id"]

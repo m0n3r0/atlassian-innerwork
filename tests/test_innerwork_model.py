@@ -124,7 +124,9 @@ def test_domain_ownership_is_case_insensitive_and_canonicalized():
     second_operation = broker.provision(second)
 
     assert broker.last_operation(first_operation.operation_id).state == "succeeded"
-    assert broker.get_service("jira-web").domains == ("shared.example.com",)
+    stored = broker.get_service("jira-web")
+    assert stored is not None
+    assert stored.domains == ("shared.example.com",)
     result = broker.last_operation(second_operation.operation_id)
     assert result.state == "failed"
     assert "shared.example.com is already owned" in result.description
@@ -156,7 +158,8 @@ def test_invalid_hostname_and_unknown_feature_fail_closed():
     assert broker.last_operation(domain_operation.operation_id).state == "failed"
     assert "invalid domain" in broker.last_operation(domain_operation.operation_id).description
     assert broker.last_operation(feature_operation.operation_id).state == "failed"
-    assert "unsupported feature" in broker.last_operation(feature_operation.operation_id).description
+    feature_result = broker.last_operation(feature_operation.operation_id)
+    assert "unsupported feature" in feature_result.description
 
 
 def test_product_family_edge_profile_mismatch_fails_closed():
@@ -267,7 +270,9 @@ def test_owner_change_for_existing_service_requires_transfer_path():
     result = broker.last_operation(operation.operation_id)
     assert result.state == "failed"
     assert "owner transfer" in result.description
-    assert broker.get_service("jira-web").owner == "jira-platform"
+    stored = broker.get_service("jira-web")
+    assert stored is not None
+    assert stored.owner == "jira-platform"
 
 
 def test_operation_lookup_is_scoped_to_service_and_unknown_safe():
@@ -285,8 +290,12 @@ def test_operation_lookup_is_scoped_to_service_and_unknown_safe():
 
     assert operation.operation_id.startswith("op_")
     assert len(operation.operation_id) > 20
-    assert broker.last_operation_for_service("jira-web", operation.operation_id).state == "succeeded"
-    assert broker.last_operation_for_service("other-service", operation.operation_id).state == "failed"
+    assert (
+        broker.last_operation_for_service("jira-web", operation.operation_id).state == "succeeded"
+    )
+    assert (
+        broker.last_operation_for_service("other-service", operation.operation_id).state == "failed"
+    )
     assert broker.last_operation_for_service("jira-web", "op_missing").state == "failed"
 
 

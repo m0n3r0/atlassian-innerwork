@@ -1,88 +1,89 @@
 # Atlassian Innerwork
 
-A clean-room, public-source reconstruction of Atlassian's system-of-work architecture.
+Atlassian Innerwork is an open-source reference application for a Jira/Confluence-inspired platform operating model. It turns public product-system research into a live, executable edge-broker service:
 
-This repo started from the public video at https://www.youtube.com/watch?v=55pTFVoclvE and now folds in Atlassian's public software catalog at https://www.atlassian.com/software.
+- product teams submit high-level domain and route intent;
+- the broker validates ownership, product-family/profile compatibility, and safe defaults;
+- the control plane renders deterministic Envoy-style snapshots;
+- the repository includes tests, CI, docs, and a CLI so contributors can run it locally.
 
-It does not contain Atlassian source code, private diagrams, private configuration, or claims of exact internal fidelity. It reconstructs the architecture pattern: an integrated product suite running on a shared Atlassian Cloud Platform, with a self-service edge/control-plane pattern for exposing product services safely.
+This is a clean-room reference design grounded in public Atlassian product positioning. It does not claim to mirror Atlassian private architecture.
 
-## Read this first
+## Run locally
 
-1. `docs/overview.md` — the easiest end-to-end explanation.
-2. `docs/product-system-map.md` — reverse-engineered map of the product suite.
-3. `docs/grand-design.md` — production-grade platform architecture.
-4. `docs/architecture.html` — standalone visual diagram.
-5. `docs/production-oss-grand-design.md` — Jira + Confluence-inspired phases from idea to production-ready OSS.
-6. `docs/autonomous-kanban-playbook.md` — autonomous Kanban execution loop with hallucination gates.
-
-## What is inside
-
-- `docs/overview.md` — concise repo guide and mental model.
-- `docs/product-system-map.md` — public product, collection, platform, and ecosystem surfaces from the software homepage, mapped into capabilities and platform dependencies.
-- `docs/grand-design.md` — polished production architecture and operating model.
-- `docs/architecture.html` — standalone dark SVG architecture diagram.
-- `docs/production-grade-roadmap.md` — staged path from prototype to production.
-- `docs/production-oss-grand-design.md` — complete idea-to-production phase design for a clean-room work + knowledge OSS app inspired by Jira + Confluence.
-- `docs/autonomous-kanban-playbook.md` — Kanban playbook for autonomous phase execution, review, iteration, and stop conditions.
-- `docs/production-readiness-checklist.md` — launch checklist for the hardened platform.
-- `docs/operations-runbook.md` — incident response and operational playbooks.
-- `docs/threat-model.md` — trust boundaries, risks, and mitigations.
-- `spec/openapi.yaml` — OSB-inspired broker API contract.
-- `examples/edge-service.yaml` — sample developer-facing edge intent.
-- `research/video-transcript.md` — timestamped transcript used as source material.
-- `research/software-page-extract.md` — normalized extraction from the Atlassian software homepage.
-- `src/innerwork/` — executable Python model for the broker/control-plane contract.
-- `data/product_catalog.json` — structured product/collection/platform taxonomy used by tests and docs.
-- `data/production_oss_phases.json` — machine-readable phase catalog for the production OSS grand design.
-- `tests/` — regression tests for the core invariants.
-
-## Quick start
+Prerequisites: Python 3.10+ and [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-uvx pytest -q
+uv sync --dev
+uv run pytest -q
+uv run ruff check .
+uv run pyright
+uv run uvicorn innerwork.app:app --reload
 ```
 
-Expected:
+Open:
 
-```text
-30 passed
+- Home: <http://127.0.0.1:8000/>
+- Interactive API docs: <http://127.0.0.1:8000/docs>
+- OpenAPI: <http://127.0.0.1:8000/openapi.json>
+- Health: <http://127.0.0.1:8000/healthz>
+
+## CLI
+
+```bash
+uv run innerwork catalog
+uv run innerwork products
+uv run innerwork phases
+uv run innerwork validate examples/edge-service.yaml
+uv run innerwork render examples/edge-service.yaml
 ```
 
-## Core idea
+## Minimal API example
 
-Atlassian's public product surface reads like a single system of work rather than a set of isolated apps:
+```bash
+curl -sS -X PUT http://127.0.0.1:8000/v2/service_instances/jira-web \
+  -H 'content-type: application/json' \
+  -d '{
+    "service_id": "jira-web",
+    "owner": "jira-platform",
+    "product_family": "teamwork_core",
+    "edge_profile": "web_app_api",
+    "domains": ["jira.example.com"],
+    "routes": [{"prefix": "/", "backend": {"name": "jira", "port": 8080}}],
+    "features": ["external_auth", "rate_limit"]
+  }'
 
-- teamwork core: Jira, Confluence, Loom, Trello, Rovo;
-- software delivery: Bitbucket, Pipelines, Rovo Dev, DX;
-- service: Jira Service Management, Customer Service Management, Assets, Statuspage, Guard;
-- product discovery: Jira Product Discovery, Feedback, Rovo;
-- strategy: Focus, Talent, Jira Align;
-- platform foundation: Home, Goals, Teams, Studio, Search, Chat, Analytics, Admin.
-
-The architecture pattern is a shared platform underneath these products:
-
-1. product teams declare service intent instead of owning bespoke edge stacks;
-2. a broker validates ownership, domains, routes, and policy;
-3. a control plane renders deterministic Envoy/xDS-style snapshots;
-4. regional proxy fleets enforce common security, observability, and reliability controls;
-5. platform services such as identity, search, analytics, AI agents, admin, and marketplace connect the product suite into one operating system for work.
-
-## Example edge intent
-
-```python
-EdgeServiceSpec(
-    service_id="jira-web",
-    owner="jira-platform",
-    product_family="teamwork_core",
-    edge_profile="web_app_api",
-    domains=("jira.example.com",),
-    routes=(RouteRule(prefix="/", backend=Backend(name="jira", port=8080)),),
-    features=("external_auth", "rate_limit", "access_logs"),
-)
+curl -sS http://127.0.0.1:8000/v2/control-plane/snapshot
 ```
 
-The platform turns that into durable broker state, service-scoped operation status, deterministic xDS-style snapshots, Envoy listeners/routes/clusters/filters, and centralized controls before traffic reaches product services.
+## What is in the repo
 
-## License
+- `src/innerwork/model.py` — fail-closed service intent model and validation rules.
+- `src/innerwork/broker.py` — in-memory OSB-inspired provisioning broker.
+- `src/innerwork/control_plane.py` — deterministic xDS-style snapshot renderer.
+- `src/innerwork/app.py` — FastAPI live application.
+- `src/innerwork/cli.py` — local contributor CLI.
+- `data/product_catalog.json` — public product catalog grounding.
+- `data/production_oss_phases.json` — phased open-source production plan.
+- `spec/openapi.yaml` — hand-authored API contract reference.
+- `docs/production-oss-grand-design.md` — grand design for productionizing the project.
+- `docs/autonomous-kanban-playbook.md` — autonomous development playbook.
 
-MIT
+## Design docs
+
+- [Production OSS grand design](docs/production-oss-grand-design.md)
+- [Autonomous Kanban playbook](docs/autonomous-kanban-playbook.md)
+- [Grand design](docs/grand-design.md)
+- [Production-grade roadmap](docs/production-grade-roadmap.md)
+- [Production-readiness checklist](docs/production-readiness-checklist.md)
+- [Threat model](docs/threat-model.md)
+- [Operations runbook](docs/operations-runbook.md)
+- [Architecture HTML walkthrough](docs/architecture.html)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
+
+1. Add or update tests first for behavior changes.
+2. Run `uv run pytest -q`, `uv run ruff check .`, and `uv run pyright`.
+3. Keep public-source grounding explicit; do not add claims about private Atlassian internals.

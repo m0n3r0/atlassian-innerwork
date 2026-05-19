@@ -1,16 +1,25 @@
 # Contributing
 
-This repository is a reference architecture, so changes should preserve two standards:
+Thanks for helping make Innerwork a useful open-source reference app.
+
+This repository has two standards:
 
 1. Keep tenant-facing APIs narrow and intent-based.
 2. Add tests for executable behavior before changing implementation.
 
-## Local verification
+## Local setup
 
 ```bash
-uvx ruff check .
-uvx pytest -q
-git diff --check
+uv sync --dev
+uv run pytest -q
+uv run ruff check .
+uv run pyright
+```
+
+To run the live app:
+
+```bash
+uv run uvicorn innerwork.app:app --reload
 ```
 
 ## Documentation changes
@@ -18,6 +27,7 @@ git diff --check
 For architecture changes, update at least one of:
 
 - `docs/grand-design.md`
+- `docs/production-oss-grand-design.md`
 - `docs/production-grade-roadmap.md`
 - `docs/production-readiness-checklist.md`
 - `docs/threat-model.md`
@@ -32,3 +42,10 @@ Follow test-driven development for behavior changes:
 3. implement the smallest change;
 4. run the full suite;
 5. update docs if the platform contract changes.
+
+## Grounding and safety rules
+
+- This is a clean-room reference implementation based on public product positioning.
+- Do not claim the design mirrors Atlassian private infrastructure.
+- Keep security-sensitive behavior fail-closed: invalid ownership, domains, routes, profiles, or features must not persist service state.
+- Do not commit secrets, access tokens, customer data, or private architecture notes.
