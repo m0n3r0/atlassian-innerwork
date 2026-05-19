@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Response, status
@@ -16,6 +18,7 @@ from .serialization import (
     spec_from_dict,
     spec_to_dict,
 )
+from .state_store import JsonStateStore
 
 
 class BackendPayload(BaseModel):
@@ -41,11 +44,13 @@ class EdgeServicePayload(BaseModel):
 
 
 class AppState:
-    def __init__(self) -> None:
-        self.broker = EdgeBroker()
+    def __init__(self, *, state_path: Path | str | None = None) -> None:
+        state_store = JsonStateStore(state_path) if state_path is not None else None
+        self.broker = EdgeBroker(state_store=state_store)
 
 
-def create_app() -> FastAPI:
+def create_app(*, state_path: Path | str | None = None) -> FastAPI:
+    resolved_state_path = state_path or os.environ.get("INNERWORK_STATE_PATH")
     app = FastAPI(
         title="Atlassian Innerwork",
         version="0.1.0",
@@ -54,7 +59,7 @@ def create_app() -> FastAPI:
             "self-service edge broker."
         ),
     )
-    state = AppState()
+    state = AppState(state_path=resolved_state_path)
 
     @app.get("/", include_in_schema=False)
     def home() -> HTMLResponse:

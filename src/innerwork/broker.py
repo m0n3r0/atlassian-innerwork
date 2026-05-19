@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 
 from .model import EdgeServiceSpec, Operation, OperationResult
+from .state_store import JsonStateStore
 
 
 class EdgeBroker:
@@ -13,10 +14,14 @@ class EdgeBroker:
     This in-memory model executes immediately but keeps the same contract.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, state_store: JsonStateStore | None = None) -> None:
         self._services: dict[str, EdgeServiceSpec] = {}
         self._operations: dict[str, OperationResult] = {}
         self._operation_counter = 0
+        self._state_store = state_store
+        if state_store is not None:
+            for service in state_store.load_services():
+                self._services[service.service_id] = service
 
     def provision(self, spec: EdgeServiceSpec) -> Operation:
         operation = self._next_operation(spec.service_id)
@@ -35,6 +40,8 @@ class EdgeBroker:
             return operation
 
         self._services[normalized.service_id] = normalized
+        if self._state_store is not None:
+            self._state_store.save_services(self.list_services())
         self._operations[operation.operation_id] = OperationResult(
             operation_id=operation.operation_id,
             service_id=normalized.service_id,
