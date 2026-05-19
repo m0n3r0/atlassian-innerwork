@@ -1,6 +1,6 @@
 # Live application guide
 
-Innerwork is now a runnable FastAPI application and CLI in addition to a reference architecture.
+The app can run purely in memory, or it can persist service intent to a local JSON file for restart-safe demos. The JSON store is deliberately small and atomic-file based; it is not a replacement for production database, auth, or worker-queue design.
 
 ## Architecture
 
@@ -42,6 +42,12 @@ The app intentionally keeps persistence in memory for the first open-source slic
 ```bash
 uv sync --dev
 uv run uvicorn innerwork.app:app --reload
+
+# Restart-safe local demo state:
+INNERWORK_STATE_PATH=.innerwork/state.json uv run uvicorn innerwork.app:app --reload
+
+# Equivalent CLI wrapper:
+uv run innerwork serve --state .innerwork/state.json
 ```
 
 ## Validate and render from CLI
@@ -62,4 +68,4 @@ uv run pyright
 git diff --check
 ```
 
-The app is ready for local demos and contributor review, not production traffic. Before production traffic, add durable storage, authentication/authorization, audit logs, rate limiting, request idempotency storage, worker queues, and deployment manifests.
+The app is ready for local demos and contributor review, not production traffic. Before production traffic, replace the JSON demo state with durable multi-writer storage, authentication/authorization, audit logs, rate limiting, request idempotency storage, worker queues, and deployment manifests.

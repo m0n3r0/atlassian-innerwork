@@ -41,6 +41,7 @@ uv run innerwork products
 uv run innerwork phases
 uv run innerwork validate examples/edge-service.yaml
 uv run innerwork render examples/edge-service.yaml
+uv run innerwork serve --state .innerwork/state.json
 ```
 
 ## Minimal API example
@@ -68,6 +69,7 @@ curl -sS http://127.0.0.1:8000/v2/control-plane/snapshot
 - `src/innerwork/control_plane.py` — deterministic xDS-style snapshot renderer.
 - `src/innerwork/app.py` — FastAPI live application.
 - `src/innerwork/cli.py` — local contributor CLI.
+- `src/innerwork/state_store.py` — optional JSON state store for restart-safe demos.
 - `data/product_catalog.json` — public product catalog grounding.
 - `data/production_oss_phases.json` — phased open-source production plan.
 - `spec/openapi.yaml` — hand-authored API contract reference.

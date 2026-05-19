@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -35,6 +37,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate a manifest and render a control-plane snapshot",
     )
     render.add_argument("manifest", type=Path)
+    serve = subcommands.add_parser("serve", help="Run the FastAPI application with uvicorn")
+    serve.add_argument("--host", default="127.0.0.1", help="Bind host, default: 127.0.0.1")
+    serve.add_argument("--port", default="8000", help="Bind port, default: 8000")
+    serve.add_argument("--state", type=Path, help="Optional JSON state file for restart-safe demos")
+    serve.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the uvicorn command and environment instead of starting the server",
+    )
     return parser
 
 
@@ -63,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         _print_json(snapshot_to_dict(ControlPlane(broker).snapshot()))
         return 0
+    if args.command == "serve":
+        return _serve(args.host, args.port, args.state, args.dry_run)
     raise AssertionError(f"unhandled command: {args.command}")
 
 
@@ -79,6 +92,28 @@ def _extract_spec(raw: Any) -> dict[str, Any]:
     if not isinstance(spec, dict):
         raise ValueError("manifest spec must be a mapping")
     return spec
+
+
+def _serve(host: str, port: str, state: Path | None, dry_run: bool) -> int:
+    command = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "innerwork.app:app",
+        "--host",
+        host,
+        "--port",
+        port,
+    ]
+    environment = os.environ.copy()
+    public_environment: dict[str, str] = {}
+    if state is not None:
+        environment["INNERWORK_STATE_PATH"] = str(state)
+        public_environment["INNERWORK_STATE_PATH"] = str(state)
+    if dry_run:
+        _print_json({"command": command, "environment": public_environment})
+        return 0
+    return subprocess.call(command, env=environment)
 
 
 def _print_json(payload: dict[str, Any]) -> None:

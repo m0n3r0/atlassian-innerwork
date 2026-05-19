@@ -1,0 +1,503 @@
+{
+  "schema_version": "1.0.0",
+  "source_grounding": {
+    "catalog_file": "data/product_catalog.json",
+    "supporting_docs": [
+      "docs/product-system-map.md",
+      "docs/grand-design.md",
+      "docs/production-grade-roadmap.md",
+      "research/video-transcript.md",
+      "research/software-page-extract.md"
+    ],
+    "caveat": "Clean-room product blueprint inspired by the public Jira + Confluence pairing. Not an Atlassian private-implementation claim, not a clone, and not a trademarked product."
+  },
+  "selected_products": ["jira", "confluence"],
+  "selected_product_grounding": [
+    {
+      "product_id": "jira",
+      "catalog_role": "Primary work graph and workflow engine.",
+      "catalog_family": "teamwork_core",
+      "catalog_dependencies": ["identity", "teams", "goals", "search", "analytics", "rovo"],
+      "evidence_path": "data/product_catalog.json#/products/jira"
+    },
+    {
+      "product_id": "confluence",
+      "catalog_role": "Knowledge graph and durable decision memory.",
+      "catalog_family": "teamwork_core",
+      "catalog_dependencies": ["identity", "teams", "search", "analytics", "rovo"],
+      "evidence_path": "data/product_catalog.json#/products/confluence"
+    }
+  ],
+  "allowed_platform_capabilities": [
+    "home", "goals", "teams", "studio", "search", "chat", "analytics", "admin", "identity", "audit"
+  ],
+  "product_thesis": {
+    "name_placeholder": "innerwork-os",
+    "one_liner": "An open-source work-and-knowledge operating system: a work graph plus a knowledge graph that share identity, permissions, search, and audit, designed to be self-hostable and AI-ready without cloning any vendor product.",
+    "target_users": [
+      "Small-to-mid engineering and product teams that want self-hostable work tracking plus durable documents under one identity and permission model.",
+      "OSS maintainers and platform teams that need a transparent reference implementation of a system-of-work surface, with API-first contracts and clear governance.",
+      "Operators who need to deploy, monitor, back up, and audit the system without proprietary lock-in."
+    ],
+    "non_goals": [
+      "Cloning Jira, Confluence, or any other vendor product surface, branding, schema, or private APIs.",
+      "Reimplementing every Atlassian feature; the scope is the two graphs and the integration surface between them.",
+      "Multi-cloud and enterprise-portfolio features before the single-cloud, single-tenant production posture is stable.",
+      "Building an LLM/agent platform before the deterministic data, API, permission, and audit layers are sound."
+    ],
+    "clean_room_rules": [
+      "Use the public Atlassian software-homepage product catalog only for inspiration about responsibilities, not for any private architecture claims.",
+      "Do not invent Atlassian-internal services, schemas, team names, or metrics.",
+      "Avoid trademarked product names, logos, and slogans in the application surface and documentation."
+    ]
+  },
+  "phases": [
+    {
+      "id": 0,
+      "name": "Idea and public-source grounding",
+      "objective": "Lock the product thesis to public, repo-grounded sources and define what is in scope and what is explicitly out of scope.",
+      "jira_inspired_requirements": [
+        "Confirm Jira's catalog role as the primary work graph and workflow engine before specifying any work-graph requirement."
+      ],
+      "confluence_inspired_requirements": [
+        "Confirm Confluence's catalog role as the knowledge graph and durable decision memory before specifying any document/knowledge requirement."
+      ],
+      "cross_product_integration_requirements": [
+        "Document the integration surface as bidirectional linking between work items and pages, with shared identity, permissions, search, and audit; do not invent additional cross-product surfaces."
+      ],
+      "build_artifacts": [
+        "docs/production-oss-grand-design.md",
+        "data/production_oss_phases.json"
+      ],
+      "acceptance_gates": [
+        "Selected products are exactly jira and confluence in the catalog file.",
+        "Every claim about Atlassian inspiration cites an existing repo source.",
+        "No trademarked product clone language appears in the deliverables."
+      ],
+      "anti_hallucination_checks": [
+        "Reject any product reference outside selected_products plus allowed_platform_capabilities.",
+        "Reject any architectural claim that names an Atlassian-internal service, schema, or team.",
+        "If evidence is insufficient for a statement, write 'not supported by current public sources' instead of guessing."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 0: PM product selection and production OSS phase specification",
+        "assignee": "atlassianpm",
+        "parent_phase": null,
+        "deliverables": ["docs/production-oss-grand-design.md", "data/production_oss_phases.json"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Grand-design doc and phase catalog exist with the same selected products and phase ids.",
+        "Phase catalog passes structural validation tests added in phase 4 work.",
+        "All anti-hallucination checks for phase 0 pass."
+      ]
+    },
+    {
+      "id": 1,
+      "name": "Product thesis, target users, and non-goals",
+      "objective": "Define the open-source product as a clean-room work-and-knowledge operating system: who it is for, what it is not, and what success looks like.",
+      "jira_inspired_requirements": [
+        "Capture work-graph responsibilities at the thesis level: trackable work items, workflow states, ownership, links to knowledge."
+      ],
+      "confluence_inspired_requirements": [
+        "Capture knowledge-graph responsibilities at the thesis level: durable documents, structured spaces, decisions, and links back to work."
+      ],
+      "cross_product_integration_requirements": [
+        "State that the product treats the work graph and the knowledge graph as first-class peers under one identity, permission, and audit model."
+      ],
+      "build_artifacts": [
+        "docs/production-oss-grand-design.md (thesis section)"
+      ],
+      "acceptance_gates": [
+        "Target users list is concrete and bounded.",
+        "Non-goals list explicitly forbids cloning vendor products.",
+        "Thesis avoids vendor branding."
+      ],
+      "anti_hallucination_checks": [
+        "No fictitious user research, customer names, or metrics.",
+        "No invented enterprise commitments such as uptime numbers or compliance certificates."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 1: thesis and non-goals",
+        "assignee": "atlassianpm",
+        "parent_phase": 0,
+        "deliverables": ["docs/production-oss-grand-design.md (updated)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Thesis is one paragraph and three lists (users, non-goals, clean-room rules).",
+        "Reviewer confirms no vendor-clone language and no invented facts."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Domain model and information architecture",
+      "objective": "Model the minimum durable domain that supports work items and knowledge pages under shared identity and permissions.",
+      "jira_inspired_requirements": [
+        "Work item entity with id, type, title, description, status, assignee, reporter, owning team, parent/child links, and timestamps.",
+        "Workflow with states and allowed transitions, owned per project/space.",
+        "Project entity that owns work items, with permissions and an audit boundary."
+      ],
+      "confluence_inspired_requirements": [
+        "Page entity with id, title, body, author, owning team/space, version history, and immutable revisions.",
+        "Space entity that owns pages, with permissions and an audit boundary.",
+        "Comment entity attached to pages and work items with stable ids."
+      ],
+      "cross_product_integration_requirements": [
+        "Bidirectional link entity between work items and pages with link type and direction.",
+        "Single user, group, and team model shared by work and knowledge."
+      ],
+      "build_artifacts": [
+        "Updated docs/production-oss-grand-design.md (domain section)",
+        "Pydantic/JSON-schema models referenced from docs (planned for engineering phase)."
+      ],
+      "acceptance_gates": [
+        "Every domain entity declares owner team and audit boundary.",
+        "No entity references an undefined platform capability.",
+        "Cross-graph links are explicit and versionable."
+      ],
+      "anti_hallucination_checks": [
+        "Do not invent Atlassian-private schema fields.",
+        "Do not invent platform capabilities outside allowed_platform_capabilities."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 2: domain model and IA",
+        "assignee": "atlassianeng",
+        "parent_phase": 1,
+        "deliverables": ["docs/production-oss-grand-design.md (updated)", "spec/openapi.yaml (planned extension)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Domain entities cover both graphs and their integration links.",
+        "Entities map to allowed_platform_capabilities only."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "API contract and permission model",
+      "objective": "Specify the API surface and permission model so engineering can implement deterministically and operators can reason about access control.",
+      "jira_inspired_requirements": [
+        "REST endpoints for projects, work items, transitions, links, comments, and search.",
+        "Idempotency keys on mutating endpoints."
+      ],
+      "confluence_inspired_requirements": [
+        "REST endpoints for spaces, pages, versions, comments, and search.",
+        "Page version conflict handling and history retrieval."
+      ],
+      "cross_product_integration_requirements": [
+        "Shared OAuth2/OIDC identity, shared RBAC model with project/space scope, and a shared audit endpoint.",
+        "Cross-graph link endpoints that require permission on both ends."
+      ],
+      "build_artifacts": [
+        "spec/openapi.yaml extensions (planned)",
+        "docs/production-oss-grand-design.md (API section)"
+      ],
+      "acceptance_gates": [
+        "All mutating endpoints require auth.",
+        "All endpoints document the permission scope required.",
+        "All endpoints emit an audit event."
+      ],
+      "anti_hallucination_checks": [
+        "Do not reference Atlassian-private endpoints or response shapes.",
+        "Do not invent OAuth scopes that are not defined locally."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 3: API and permissions",
+        "assignee": "atlassianeng",
+        "parent_phase": 2,
+        "deliverables": ["spec/openapi.yaml", "docs/production-oss-grand-design.md (updated)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "OpenAPI extension validates locally.",
+        "Permission model is explicit per endpoint.",
+        "Every endpoint has an audit-event contract."
+      ]
+    },
+    {
+      "id": 4,
+      "name": "MVP vertical slice",
+      "objective": "Build a runnable, testable end-to-end slice: create a work item, create a page, link them, list them filtered by permission.",
+      "jira_inspired_requirements": [
+        "Create, read, update, transition, and link a work item via API.",
+        "Workflow state machine enforced server-side."
+      ],
+      "confluence_inspired_requirements": [
+        "Create, read, version-update, and link a page via API.",
+        "Stable page version retrieval."
+      ],
+      "cross_product_integration_requirements": [
+        "Bidirectional link with permission check on both endpoints.",
+        "Search endpoint that filters out objects the caller cannot read."
+      ],
+      "build_artifacts": [
+        "Reference implementation in src/innerwork/ (planned future work).",
+        "Integration tests in tests/."
+      ],
+      "acceptance_gates": [
+        "Happy path passes integration tests.",
+        "Permission-denied paths are covered by tests.",
+        "Audit events are written for every mutation."
+      ],
+      "anti_hallucination_checks": [
+        "No mock data that pretends to be production data.",
+        "No claims of feature parity with Jira or Confluence."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 4: MVP vertical slice",
+        "assignee": "atlassianeng",
+        "parent_phase": 3,
+        "deliverables": ["src/innerwork/* (planned)", "tests/test_mvp_slice.py (planned)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "MVP slice runs from a clean checkout with documented commands.",
+        "Integration tests cover happy path and permission denial."
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Collaboration, notifications, import/export",
+      "objective": "Add the collaboration surface needed for real teams: comments, mentions, notifications, and structured import/export.",
+      "jira_inspired_requirements": [
+        "Comment thread on work items with @mentions.",
+        "Notification on assignment, transition, and mention."
+      ],
+      "confluence_inspired_requirements": [
+        "Comment thread on pages with @mentions and inline comments-by-anchor where the renderer supports it.",
+        "Page subscription notifications."
+      ],
+      "cross_product_integration_requirements": [
+        "Cross-graph mention resolution that points to the same user across work items and pages.",
+        "JSON-based import/export schema for projects, spaces, work items, pages, comments, and links."
+      ],
+      "build_artifacts": [
+        "Notification dispatcher (planned).",
+        "Import/export CLI (planned).",
+        "Docs section on collaboration."
+      ],
+      "acceptance_gates": [
+        "Notifications respect user preferences and quiet hours where defined.",
+        "Import/export is round-trippable for a small fixture."
+      ],
+      "anti_hallucination_checks": [
+        "Do not invent email-template content claimed to be vendor-standard.",
+        "Do not claim third-party connectors that are not actually implemented."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 5: collaboration and import/export",
+        "assignee": "atlassianeng",
+        "parent_phase": 4,
+        "deliverables": ["src/innerwork/notify.py (planned)", "src/innerwork/portability.py (planned)", "docs update"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Import/export round-trip test passes.",
+        "Notification dispatch is observable and rate-limited."
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Search, analytics, and AI-ready context boundaries",
+      "objective": "Make the system queryable, measurable, and safe to expose to AI assistants via explicit context boundaries.",
+      "jira_inspired_requirements": [
+        "Indexed search over work items respecting permissions.",
+        "Basic analytics: open/in-progress/done counts, cycle time per project."
+      ],
+      "confluence_inspired_requirements": [
+        "Indexed search over pages and comments respecting permissions.",
+        "Basic analytics: edit recency, contributor counts per space."
+      ],
+      "cross_product_integration_requirements": [
+        "Unified search endpoint that joins work items and pages.",
+        "Explicit AI context-boundary contract: only objects the caller can read are returned, with a token budget and a redaction list."
+      ],
+      "build_artifacts": [
+        "Search index abstraction (planned).",
+        "Analytics rollup jobs (planned).",
+        "Docs section on AI-ready context boundaries."
+      ],
+      "acceptance_gates": [
+        "Permission-respecting search test passes.",
+        "AI context-boundary contract is documented and tested for redaction."
+      ],
+      "anti_hallucination_checks": [
+        "Do not claim to use a vendor LLM that is not actually wired in.",
+        "Do not assert benchmark numbers without a reproducible script."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 6: search analytics and AI boundaries",
+        "assignee": "atlassianeng",
+        "parent_phase": 5,
+        "deliverables": ["src/innerwork/search.py (planned)", "src/innerwork/ai_context.py (planned)", "docs update"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Search returns only permitted objects.",
+        "AI context endpoint redacts according to documented rules."
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Reliability, security, privacy, and compliance hardening",
+      "objective": "Bring the system to a baseline production-trust posture: backups, secret management, threat model, privacy controls, and audit completeness.",
+      "jira_inspired_requirements": [
+        "Audit every workflow transition.",
+        "Field-level access control where required."
+      ],
+      "confluence_inspired_requirements": [
+        "Audit every page version write and visibility change.",
+        "Export-friendly audit logs."
+      ],
+      "cross_product_integration_requirements": [
+        "Shared audit pipeline.",
+        "Threat model that explicitly covers cross-graph linking abuse and mention scraping."
+      ],
+      "build_artifacts": [
+        "Updated docs/threat-model.md.",
+        "Backup and restore scripts (planned).",
+        "Secrets handling documented."
+      ],
+      "acceptance_gates": [
+        "Threat model lists assets, actors, vectors, and mitigations.",
+        "Backups are tested by restoring into a clean environment.",
+        "Privacy-relevant fields are documented."
+      ],
+      "anti_hallucination_checks": [
+        "Do not assert compliance certifications that have not been issued.",
+        "Do not name auditors or attesters that have not engaged with the project."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 7: reliability security privacy compliance",
+        "assignee": "atlassianeng",
+        "parent_phase": 6,
+        "deliverables": ["docs/threat-model.md (updated)", "scripts/backup_restore (planned)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Threat model is reviewed and accepted by an independent reviewer.",
+        "Backup/restore drill passes."
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Deployment, operations, SLOs, observability, release engineering",
+      "objective": "Make the system deployable, observable, and operable in production with explicit SLOs and release discipline.",
+      "jira_inspired_requirements": [
+        "Operational dashboards for workflow throughput and error rates."
+      ],
+      "confluence_inspired_requirements": [
+        "Operational dashboards for page-write success and version-conflict rate."
+      ],
+      "cross_product_integration_requirements": [
+        "Unified deployment topology (broker, workers, store, search, optional sidecars).",
+        "Release engineering with signed artifacts, change log, and rollback plan."
+      ],
+      "build_artifacts": [
+        "docs/operations-runbook.md (extended).",
+        "CI release workflow (planned).",
+        "SLO definitions in docs."
+      ],
+      "acceptance_gates": [
+        "SLO targets are documented per critical endpoint.",
+        "Release rollback procedure is executable and rehearsed.",
+        "Observability covers logs, metrics, and traces for both graphs."
+      ],
+      "anti_hallucination_checks": [
+        "Do not claim achieved SLO numbers in absence of measurement.",
+        "Do not claim CDN/edge providers that are not integrated."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 8: deploy ops SLOs observability",
+        "assignee": "atlassianeng",
+        "parent_phase": 7,
+        "deliverables": ["docs/operations-runbook.md (updated)", "ci release workflow (planned)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Staging deployment is reproducible from CI.",
+        "Rollback drill passes."
+      ]
+    },
+    {
+      "id": 9,
+      "name": "Open-source governance, contributor experience, packaging, docs",
+      "objective": "Make the project legitimately community-runnable: license, code of conduct, contributor guide, release cadence, packaging, and docs site.",
+      "jira_inspired_requirements": [
+        "Contributor docs describe how to add a new work-item type without forking core."
+      ],
+      "confluence_inspired_requirements": [
+        "Contributor docs describe how to add a new page macro/renderer plug-in without forking core."
+      ],
+      "cross_product_integration_requirements": [
+        "Single contributor guide covering both graphs.",
+        "Governance describes how breaking-change decisions are made across the two graphs."
+      ],
+      "build_artifacts": [
+        "CONTRIBUTING.md (extended).",
+        "GOVERNANCE.md (planned).",
+        "Release packaging via pyproject.toml and tagged releases."
+      ],
+      "acceptance_gates": [
+        "License, CoC, security policy, and contributor guide exist and are linked from README.",
+        "Release packaging produces a versioned artifact that is installable from a tag."
+      ],
+      "anti_hallucination_checks": [
+        "Do not list maintainers who have not opted in.",
+        "Do not claim foundation affiliation that has not been granted."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 9: governance and packaging",
+        "assignee": "atlassianeng",
+        "parent_phase": 8,
+        "deliverables": ["CONTRIBUTING.md (updated)", "GOVERNANCE.md (planned)", "release packaging"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "External contributor can land a non-trivial PR using only documented workflow.",
+        "A tagged release is installable from PyPI or equivalent."
+      ]
+    },
+    {
+      "id": 10,
+      "name": "Beta, migration, launch, and post-launch iteration",
+      "objective": "Drive the project from internal readiness through a public beta and into ongoing iteration with measurable feedback loops.",
+      "jira_inspired_requirements": [
+        "Public beta surfaces work-item lifecycles; bugs are tracked in the same instance as a dogfooding signal."
+      ],
+      "confluence_inspired_requirements": [
+        "Public beta surfaces page editing and version history; release notes are written in the system itself."
+      ],
+      "cross_product_integration_requirements": [
+        "Migration guide for importing from common JSON exports.",
+        "Public roadmap that links phases 0-10 to ongoing issues."
+      ],
+      "build_artifacts": [
+        "docs/launch-plan.md (planned).",
+        "Migration tooling (planned).",
+        "Post-launch metrics dashboard (planned)."
+      ],
+      "acceptance_gates": [
+        "Beta program has documented onboarding and offboarding.",
+        "Migration path is tested with at least one synthetic fixture.",
+        "Post-launch iteration loop is documented and operating."
+      ],
+      "anti_hallucination_checks": [
+        "Do not claim beta user counts without published evidence.",
+        "Do not assert revenue, pricing, or commercial relationships."
+      ],
+      "kanban_child_task_shape": {
+        "title": "phase 10: beta launch and iteration",
+        "assignee": "atlassianpm",
+        "parent_phase": 9,
+        "deliverables": ["docs/launch-plan.md (planned)", "migration tooling (planned)"],
+        "block_reason_on_finish": "review-required"
+      },
+      "exit_criteria": [
+        "Beta has run for a documented window.",
+        "At least one external migration has been completed end-to-end.",
+        "Post-launch iteration cadence is in place."
+      ]
+    }
+  ]
+}
