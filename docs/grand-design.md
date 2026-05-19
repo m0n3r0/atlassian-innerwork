@@ -6,6 +6,11 @@
 
 Atlassian's public portfolio now reads as a single system of work: Jira, Confluence, Loom, Trello, Rovo, Jira Service Management, Bitbucket, Jira Product Discovery, Focus, Talent, Align, and more sit on a connected cloud platform. The video explains one critical platform pattern needed to operate that breadth safely: a self-service edge platform that lets product teams expose services through a common broker, control plane, and regional Envoy data plane.
 
+This repository now has two explicit scopes:
+
+1. **Current runnable PoC:** a Dockerized FastAPI backend for the edge broker/control-plane pattern.
+2. **Product we are building next:** **Innerwork**, a Jira/Confluence-inspired work-and-knowledge app. It is limited to a work graph, a knowledge graph, and shared identity/permission/search/audit/linking. Bitbucket, Trello, Loom, Jira Service Management, Statuspage, Guard, Jira Align, and the rest of the portfolio remain catalog context only.
+
 The production-grade design has six layers:
 
 1. Product experiences: the apps and collections visible to customers.

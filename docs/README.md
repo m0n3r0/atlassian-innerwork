@@ -2,17 +2,21 @@
 
 Start here:
 
-1. `overview.md` — easiest end-to-end explanation of the repo.
-2. `live-application.md` — run the FastAPI app and CLI locally.
-3. `product-system-map.md` — product-by-product reconstruction from the Atlassian software homepage.
-4. `grand-design.md` — production-grade platform and edge architecture.
-5. `architecture.html` — standalone architecture diagram.
-6. `production-oss-grand-design.md` — clean-room Jira + Confluence-inspired open-source application phases.
-7. `autonomous-kanban-playbook.md` — autonomous Kanban execution and review loop.
+1. `product-scope.md` — exact product boundary: Innerwork = Jira/Confluence-inspired work + knowledge only.
+2. `docker-poc.md` — Docker Compose proof of concept and smoke-test commands.
+3. `live-application.md` — frontend/backend boundaries, FastAPI app, CLI, and Docker/Python run modes.
+4. `overview.md` — easiest end-to-end explanation of the repo.
+5. `product-system-map.md` — product-by-product reconstruction from the Atlassian software homepage.
+6. `grand-design.md` — production-grade platform and edge architecture.
+7. `architecture.html` — standalone architecture diagram.
+8. `production-oss-grand-design.md` — clean-room Jira + Confluence-inspired open-source application phases.
+9. `autonomous-kanban-playbook.md` — autonomous Kanban execution and review loop.
 
 Reference docs:
 
-- `live-application.md` — run the FastAPI app and contributor CLI locally.
+- `product-scope.md` — scope boundary for the Innerwork product.
+- `docker-poc.md` — Docker Compose PoC and smoke-test workflow.
+- `live-application.md` — frontend/backend boundaries plus FastAPI app and contributor CLI.
 - `production-grade-roadmap.md` — staged implementation roadmap.
 - `production-oss-grand-design.md` — from idea to production-ready OSS phase design.
 - `autonomous-kanban-playbook.md` — Kanban playbook with non-hallucination gates and iteration policy.

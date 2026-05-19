@@ -7,7 +7,13 @@ It combines two public inputs:
 1. the video at https://www.youtube.com/watch?v=55pTFVoclvE, which explains a self-service edge/load-balancing platform built around a broker, workers, Envoy, xDS, regional proxy fleets, and platform sidecars;
 2. the public Atlassian software homepage at https://www.atlassian.com/software, which shows the current product portfolio and how Atlassian groups products into collections, roles, and platform capabilities.
 
+The product scope is deliberately narrower than the full portfolio: **Innerwork** is a Jira/Confluence-inspired work-and-knowledge app, plus a platform/backend proof of concept that makes it runnable. Other Atlassian products are catalog context, not implementation scope.
+
 The result is not an exact internal Atlassian design. It is a clean-room model of the architecture pattern.
+
+## Product scope in one sentence
+
+Innerwork is building the Jira + Confluence lane only: a work graph plus a knowledge graph with shared identity, permissions, search, links, and audit. Bitbucket, Trello, Loom, Jira Service Management, Statuspage, Guard, Jira Align, and other cataloged products are outside the MVP and should be treated as context only.
 
 ## One-page mental model
 

@@ -1,0 +1,21 @@
+services:
+  innerwork:
+    build:
+      context: .
+    image: atlassian-innerwork:poc
+    environment:
+      INNERWORK_DATABASE_URL: sqlite:////tmp/innerwork/innerwork.db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.innerwork:/tmp/innerwork
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

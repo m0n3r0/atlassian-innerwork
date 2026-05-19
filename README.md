@@ -9,7 +9,44 @@ Atlassian Innerwork is an open-source reference application for a Jira/Confluenc
 
 This is a clean-room reference design grounded in public Atlassian product positioning. It does not claim to mirror Atlassian private architecture.
 
-## Run locally
+## Product scope
+
+The product being built is **Innerwork**: a clean-room, Jira/Confluence-inspired work-and-knowledge application. The intended MVP combines:
+
+- a work graph: projects, work items, workflow states, comments, and ownership;
+- a knowledge graph: spaces, pages, versions, comments, and durable decisions;
+- cross-graph links under one identity, permission, search, and audit model.
+
+The current runnable app is the platform/backend proof of concept for that direction: an edge broker and control-plane API that validates service intent, persists local state, and renders deterministic snapshots. It is not a Jira clone, not a Confluence clone, and not a clone of Atlassian's UI or private architecture.
+
+Not building Bitbucket, Trello, Loom, Jira Service Management, Statuspage, Guard, Jira Align, or the rest of the Atlassian portfolio. Those products remain catalog context only.
+
+See [`docs/product-scope.md`](docs/product-scope.md) for the scope boundary.
+
+## Run locally with Docker
+
+Prerequisites: Docker with Compose support.
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+- Home / current frontend shell: <http://127.0.0.1:8000/>
+- Interactive API docs: <http://127.0.0.1:8000/docs>
+- OpenAPI: <http://127.0.0.1:8000/openapi.json>
+- Health: <http://127.0.0.1:8000/healthz>
+
+Stop:
+
+```bash
+docker compose down
+```
+
+The Docker PoC stores SQLite state under `.innerwork/innerwork.db` through the Compose volume mount. See [`docs/docker-poc.md`](docs/docker-poc.md) for smoke-test commands and limitations.
+
+## Run locally with Python
 
 Prerequisites: Python 3.10+ and [`uv`](https://docs.astral.sh/uv/).
 
@@ -25,13 +62,6 @@ python -m pip install -e . pytest ruff
 python -m pytest -q
 python -m ruff check .
 ```
-
-Open:
-
-- Home: <http://127.0.0.1:8000/>
-- Interactive API docs: <http://127.0.0.1:8000/docs>
-- OpenAPI: <http://127.0.0.1:8000/openapi.json>
-- Health: <http://127.0.0.1:8000/healthz>
 
 ## CLI
 
@@ -71,6 +101,7 @@ curl -sS http://127.0.0.1:8000/v2/control-plane/snapshot
 - `src/innerwork/control_plane.py` — deterministic xDS-style snapshot renderer.
 - `src/innerwork/app.py` — FastAPI live application.
 - `src/innerwork/cli.py` — local contributor CLI.
+- `Dockerfile` and `docker-compose.yml` — one-container Docker PoC with host-mounted SQLite state.
 - `src/innerwork/state_store.py` — optional JSON state store for restart-safe demos.
 - `src/innerwork/sql_state_store.py` — local SQLite store for durable Phase 2 services, operations, and idempotency keys.
 - `data/product_catalog.json` — public product catalog grounding.
@@ -81,6 +112,9 @@ curl -sS http://127.0.0.1:8000/v2/control-plane/snapshot
 
 ## Design docs
 
+- [Product scope](docs/product-scope.md)
+- [Docker proof of concept](docs/docker-poc.md)
+- [Live application guide](docs/live-application.md)
 - [Production OSS grand design](docs/production-oss-grand-design.md)
 - [Autonomous Kanban playbook](docs/autonomous-kanban-playbook.md)
 - [Grand design](docs/grand-design.md)
