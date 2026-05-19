@@ -10,12 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install test tools
-        run: python -m pip install pytest ruff
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Python
+        run: uv python install 3.11
+      - name: Install dependencies
+        run: uv sync --dev --frozen
       - name: Lint
-        run: ruff check .
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run pyright
       - name: Test
-        run: pytest -q
+        run: uv run pytest -q
+      - name: Build wheel
+        run: uv build --wheel
