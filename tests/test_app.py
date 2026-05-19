@@ -3,6 +3,10 @@ from fastapi.testclient import TestClient
 from innerwork.app import create_app
 
 
+def test_create_app_is_reexported_from_innerwork_app_module():
+    assert callable(create_app)
+
+
 def test_live_app_health_catalog_and_openapi_are_available():
     client = TestClient(create_app())
 
