@@ -1,6 +1,6 @@
 # Live application guide
 
-The app can run purely in memory, or it can persist service intent to a local JSON file for restart-safe demos. The JSON store is deliberately small and atomic-file based; it is not a replacement for production database, auth, or worker-queue design.
+The app can run in memory, persist service intent to a local JSON file for restart-safe demos, or use a local SQLite database for the Phase 2 API/schema gate. The SQLite store persists services, operations, and idempotency-key bindings so local broker API runs survive process restarts. It is still a single-process local store; worker queues, auth, tenant isolation, and production multi-writer database operations remain later roadmap work.
 
 ## Architecture
 
@@ -13,14 +13,14 @@ Contributor / product team
         |
         |  validates ownership, routes, profiles, features
         v
-  In-memory service registry
+  In-memory / JSON / SQLite service registry
         |
-        |  deterministic render
+        |  records idempotent operation state
         v
   Control-plane snapshot
 ```
 
-The app intentionally keeps persistence in memory for the first open-source slice. That makes the core contract easy to review and test. Production persistence, authentication, tenant isolation, and async workers remain explicit roadmap items.
+The app intentionally keeps the default mode in memory for easy contributor review. Use `INNERWORK_STATE_PATH` for JSON demo persistence, or `INNERWORK_DATABASE_URL=sqlite:///.innerwork/innerwork.db` for the Phase 2 durable local API contract with persisted operations and idempotency keys.
 
 ## HTTP endpoints
 
@@ -31,8 +31,9 @@ The app intentionally keeps persistence in memory for the first open-source slic
 | `GET /v2/catalog` | OSB-shaped service catalog. |
 | `GET /v2/products` | Public product catalog grounding data. |
 | `GET /v2/production-oss-phases` | Production OSS phase plan. |
+| `GET /v2/policy-profiles` | Product-family/profile policy matrix used by validation and rendering. |
 | `GET /v2/service_instances` | List stored service intents. |
-| `PUT /v2/service_instances/{instance_id}` | Validate and store service intent. |
+| `PUT /v2/service_instances/{instance_id}` | Validate and store service intent; requires `X-Idempotency-Key`. |
 | `GET /v2/service_instances/{instance_id}` | Fetch stored service intent. |
 | `GET /v2/service_instances/{instance_id}/last_operation?operation=...` | Poll operation state. |
 | `GET /v2/control-plane/snapshot` | Render deterministic proxy snapshot. |
@@ -46,8 +47,12 @@ uv run uvicorn innerwork.app:app --reload
 # Restart-safe local demo state:
 INNERWORK_STATE_PATH=.innerwork/state.json uv run uvicorn innerwork.app:app --reload
 
-# Equivalent CLI wrapper:
+# Durable Phase 2 local state:
+INNERWORK_DATABASE_URL=sqlite:///.innerwork/innerwork.db uv run uvicorn innerwork.app:app --reload
+
+# Equivalent CLI wrappers:
 uv run innerwork serve --state .innerwork/state.json
+uv run innerwork serve --database-url sqlite:///.innerwork/innerwork.db
 ```
 
 ## Validate and render from CLI
@@ -68,4 +73,4 @@ uv run pyright
 git diff --check
 ```
 
-The app is ready for local demos and contributor review, not production traffic. Before production traffic, replace the JSON demo state with durable multi-writer storage, authentication/authorization, audit logs, rate limiting, request idempotency storage, worker queues, and deployment manifests.
+The app is ready for local demos and contributor review, including the Phase 2 schema/API gate. It now has OpenAPI/Pydantic contracts, CLI config validation, reviewed profile policies, required idempotency keys for mutating requests, persisted operation state, and a local SQLite durable state option. Before production traffic, add authentication/authorization, tenant isolation, async worker queues, retry/backoff/poison queues, operational migrations, and deployment manifests.

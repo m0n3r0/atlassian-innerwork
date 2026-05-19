@@ -4,20 +4,21 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import FastAPI, Header, HTTPException, Query, Response, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
 from .control_plane import ControlPlane
+from .model import EDGE_POLICY_PROFILES
 from .serialization import (
     operation_result_to_dict,
     operation_to_dict,
     snapshot_to_dict,
-    spec_from_dict,
     spec_to_dict,
 )
+from .sql_state_store import SqliteStateStore
 from .state_store import JsonStateStore
 
 
@@ -43,14 +44,42 @@ class EdgeServicePayload(BaseModel):
     features: list[str] = Field(default_factory=list)
 
 
+class OperationResponse(BaseModel):
+    operation: str
+    service_id: str
+    state: str
+    description: str
+
+
+class EdgePolicyProfile(BaseModel):
+    product_family: str
+    edge_profile: str
+    required_features: list[str]
+    allowed_features: list[str]
+    notes: str
+
+
 class AppState:
-    def __init__(self, *, state_path: Path | str | None = None) -> None:
-        state_store = JsonStateStore(state_path) if state_path is not None else None
+    def __init__(
+        self,
+        *,
+        state_path: Path | str | None = None,
+        database_url: str | None = None,
+    ) -> None:
+        if database_url is not None:
+            state_store = SqliteStateStore(_sqlite_path_from_url(database_url))
+        else:
+            state_store = JsonStateStore(state_path) if state_path is not None else None
         self.broker = EdgeBroker(state_store=state_store)
 
 
-def create_app(*, state_path: Path | str | None = None) -> FastAPI:
+def create_app(
+    *,
+    state_path: Path | str | None = None,
+    database_url: str | None = None,
+) -> FastAPI:
     resolved_state_path = state_path or os.environ.get("INNERWORK_STATE_PATH")
+    resolved_database_url = database_url or os.environ.get("INNERWORK_DATABASE_URL")
     app = FastAPI(
         title="Atlassian Innerwork",
         version="0.1.0",
@@ -59,7 +88,7 @@ def create_app(*, state_path: Path | str | None = None) -> FastAPI:
             "self-service edge broker."
         ),
     )
-    state = AppState(state_path=resolved_state_path)
+    state = AppState(state_path=resolved_state_path, database_url=resolved_database_url)
 
     @app.get("/", include_in_schema=False)
     def home() -> HTMLResponse:
@@ -85,6 +114,27 @@ def create_app(*, state_path: Path | str | None = None) -> FastAPI:
     def phases() -> dict[str, Any]:
         return production_oss_phases()
 
+    @app.get(
+        "/v2/policy-profiles",
+        tags=["broker"],
+        response_model=dict[str, list[EdgePolicyProfile]],
+    )
+    def policy_profiles() -> dict[str, Any]:
+        profiles = [
+            EdgePolicyProfile(
+                product_family=profile.product_family,
+                edge_profile=profile.edge_profile,
+                required_features=list(profile.required_features),
+                allowed_features=list(profile.allowed_features),
+                notes=profile.notes,
+            ).model_dump()
+            for profile in sorted(
+                EDGE_POLICY_PROFILES.values(),
+                key=lambda item: (item.product_family, item.edge_profile),
+            )
+        ]
+        return {"profiles": profiles}
+
     @app.get("/v2/service_instances", tags=["broker"])
     def list_service_instances() -> dict[str, Any]:
         return {"services": [spec_to_dict(spec) for spec in state.broker.list_services()]}
@@ -93,19 +143,32 @@ def create_app(*, state_path: Path | str | None = None) -> FastAPI:
         "/v2/service_instances/{instance_id}",
         tags=["broker"],
         status_code=status.HTTP_202_ACCEPTED,
+        response_model=OperationResponse,
+        responses={428: {"description": "Missing required X-Idempotency-Key header"}},
     )
-    def provision_service_instance(instance_id: str, payload: EdgeServicePayload) -> dict[str, Any]:
-        spec_payload = payload.model_dump()
-        spec_payload["service_id"] = instance_id
-        try:
-            spec = spec_from_dict(spec_payload)
-        except (KeyError, TypeError, ValueError) as exc:
+    def provision_service_instance(
+        instance_id: str,
+        payload: EdgeServicePayload,
+        x_idempotency_key: str | None = Header(
+            default=None,
+            alias="X-Idempotency-Key",
+            min_length=16,
+            max_length=128,
+        ),
+    ) -> dict[str, Any]:
+        if x_idempotency_key is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=str(exc),
-            ) from exc
-
-        operation = state.broker.provision(spec)
+                status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+                detail="X-Idempotency-Key header is required for mutating broker operations",
+            )
+        try:
+            operation = state.broker.provision_from_payload(
+                instance_id,
+                payload.model_dump(),
+                idempotency_key=x_idempotency_key,
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            operation = state.broker.record_failed_operation(instance_id, str(exc))
         result = state.broker.last_operation(operation.operation_id)
         body = operation_to_dict(operation)
         body["state"] = result.state
@@ -135,6 +198,16 @@ def create_app(*, state_path: Path | str | None = None) -> FastAPI:
         return snapshot_to_dict(ControlPlane(state.broker).snapshot())
 
     return app
+
+
+def _sqlite_path_from_url(database_url: str) -> Path:
+    prefix = "sqlite:///"
+    if not database_url.startswith(prefix):
+        raise ValueError("only sqlite:/// database URLs are supported by the local Phase 2 store")
+    raw_path = database_url[len(prefix) :]
+    if not raw_path:
+        raise ValueError("sqlite database URL must include a file path")
+    return Path(raw_path)
 
 
 def _home_html() -> str:

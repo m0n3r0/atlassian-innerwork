@@ -16,7 +16,6 @@ PAYLOAD = {
     "features": ["rate_limit"],
 }
 
-
 CONFLUENCE_PAYLOAD = {
     "service_id": "ignored-by-path",
     "owner": "confluence-platform",
@@ -28,11 +27,19 @@ CONFLUENCE_PAYLOAD = {
 }
 
 
+def _put(client: TestClient, instance_id: str, payload: dict[str, object], key: str):
+    return client.put(
+        f"/v2/service_instances/{instance_id}",
+        json=payload,
+        headers={"X-Idempotency-Key": key},
+    )
+
+
 def test_app_persists_service_registry_across_restarts(tmp_path: Path):
     state_file = tmp_path / "innerwork-state.json"
     first_client = TestClient(create_app(state_path=state_file))
 
-    accepted = first_client.put("/v2/service_instances/jira-web", json=PAYLOAD)
+    accepted = _put(first_client, "jira-web", PAYLOAD, "persistence-key-000001")
 
     assert accepted.status_code == 202
     assert accepted.json()["state"] == "succeeded"
@@ -50,13 +57,13 @@ def test_app_persists_service_registry_across_restarts(tmp_path: Path):
 def test_failed_provision_does_not_overwrite_persisted_state(tmp_path: Path):
     state_file = tmp_path / "innerwork-state.json"
     first_client = TestClient(create_app(state_path=state_file))
-    result = first_client.put("/v2/service_instances/jira-web", json=PAYLOAD).json()
+    result = _put(first_client, "jira-web", PAYLOAD, "persistence-key-000001").json()
     assert result["state"] == "succeeded"
     original = state_file.read_text(encoding="utf-8")
 
     conflict = dict(CONFLUENCE_PAYLOAD)
     conflict["domains"] = ["jira.example.com"]
-    response = first_client.put("/v2/service_instances/confluence-web", json=conflict)
+    response = _put(first_client, "confluence-web", conflict, "persistence-key-000003")
 
     assert response.status_code == 202
     assert response.json()["state"] == "failed"
@@ -68,11 +75,15 @@ def test_failed_provision_does_not_overwrite_persisted_state(tmp_path: Path):
 def test_appends_successful_provisions_to_persisted_state(tmp_path: Path):
     state_file = tmp_path / "innerwork-state.json"
     first_client = TestClient(create_app(state_path=state_file))
-    result = first_client.put("/v2/service_instances/jira-web", json=PAYLOAD).json()
+    result = _put(first_client, "jira-web", PAYLOAD, "persistence-key-000001").json()
     assert result["state"] == "succeeded"
     assert (
-        first_client.put("/v2/service_instances/confluence-web", json=CONFLUENCE_PAYLOAD)
-        .json()["state"]
+        _put(
+            first_client,
+            "confluence-web",
+            CONFLUENCE_PAYLOAD,
+            "persistence-key-000002",
+        ).json()["state"]
         == "succeeded"
     )
 

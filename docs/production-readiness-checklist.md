@@ -9,18 +9,18 @@
 
 ## API and schema
 
-- [ ] EdgeService schema has versioned compatibility guarantees.
-- [ ] Broker endpoints have OpenAPI documentation.
-- [ ] Idempotency keys are required for mutating operations.
-- [ ] Admission rejects unknown domains, duplicate domains, invalid prefixes, invalid ports, and unsupported features.
-- [ ] Admission rejects unsupported product-family/profile combinations.
-- [ ] Every rejection includes a tenant-actionable reason.
+- [x] EdgeService schema has versioned compatibility guarantees.
+- [x] Broker endpoints have OpenAPI documentation.
+- [x] Idempotency keys are required for mutating operations.
+- [x] Admission rejects unknown domains, duplicate domains, invalid prefixes, invalid ports, and unsupported features.
+- [x] Admission rejects unsupported product-family/profile combinations.
+- [x] Every rejection includes a tenant-actionable reason.
 
 ## State and workers
 
 - [ ] Domain ownership is strongly unique.
 - [ ] Route ownership is strongly unique for host/path/profile combinations.
-- [ ] Operation state is durable and pollable through service-scoped lookup.
+- [x] Operation state is durable and pollable through service-scoped lookup.
 - [ ] Worker retries are bounded and observable.
 - [ ] Poison messages are quarantined.
 - [ ] Partial cloud-side changes have compensating cleanup.

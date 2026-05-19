@@ -19,6 +19,8 @@ jobs:
         run: uv run ruff check .
       - name: Type check
         run: uv run pyright
+      - name: Validate OpenAPI contract
+        run: uv run python scripts/validate_openapi_contract.py
       - name: Test
         run: uv run pytest -q
       - name: Build wheel

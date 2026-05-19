@@ -29,7 +29,11 @@ def test_live_app_provisions_service_and_renders_snapshot():
         "features": ["rate_limit"],
     }
 
-    accepted = client.put("/v2/service_instances/jira-web", json=payload)
+    accepted = client.put(
+        "/v2/service_instances/jira-web",
+        json=payload,
+        headers={"X-Idempotency-Key": "app-test-key-000001"},
+    )
 
     assert accepted.status_code == 202
     body = accepted.json()
@@ -69,8 +73,19 @@ def test_live_app_conflicts_are_safe_and_do_not_persist_failed_service():
         "features": [],
     }
 
-    assert client.put("/v2/service_instances/jira-web", json=first).json()["state"] == "succeeded"
-    conflict = client.put("/v2/service_instances/confluence-web", json=second).json()
+    assert (
+        client.put(
+            "/v2/service_instances/jira-web",
+            json=first,
+            headers={"X-Idempotency-Key": "app-test-key-000002"},
+        ).json()["state"]
+        == "succeeded"
+    )
+    conflict = client.put(
+        "/v2/service_instances/confluence-web",
+        json=second,
+        headers={"X-Idempotency-Key": "app-test-key-000003"},
+    ).json()
 
     assert conflict["state"] == "failed"
     assert "already owned" in conflict["description"]
