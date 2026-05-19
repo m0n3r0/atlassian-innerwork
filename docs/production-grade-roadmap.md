@@ -42,6 +42,8 @@ Exit criteria:
 
 ## Phase 2 — API contract and schema gate
 
+Status: completed in this repository.
+
 Build:
 
 - OpenAPI spec for broker endpoints;
@@ -66,6 +68,8 @@ Exit criteria:
 - product-family edge profiles are explicit and reviewed.
 
 ## Phase 3 — Durable state and worker execution
+
+Status: next phase; not yet implemented beyond the Phase 2 local SQLite state gate.
 
 Build:
 

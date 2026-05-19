@@ -18,6 +18,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Catalog'
+  /v2/policy-profiles:
+    get:
+      summary: List reviewed product-family edge policy profiles
+      responses:
+        '200':
+          description: Policy profile matrix
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles]
+                properties:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EdgePolicyProfile'
+                additionalProperties: false
+  /v2/service_instances:
+    get:
+      summary: List stored service intents
+      responses:
+        '200':
+          description: Stored service intents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [services]
+                properties:
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EdgeServiceSpec'
+                additionalProperties: false
   /v2/service_instances/{instance_id}:
     put:
       summary: Provision or replace an edge service instance
@@ -39,6 +73,12 @@ paths:
                 $ref: '#/components/schemas/OperationAccepted'
         '409':
           description: Ownership conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '428':
+          description: Missing required idempotency key
           content:
             application/json:
               schema:
@@ -73,6 +113,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OperationAccepted'
+  /v2/control-plane/snapshot:
+    get:
+      summary: Render deterministic control-plane snapshot
+      responses:
+        '200':
+          description: Control-plane snapshot
+          content:
+            application/json:
+              schema:
+                type: object
   /v2/service_instances/{instance_id}/last_operation:
     get:
       summary: Poll the latest operation state for a service instance
@@ -193,6 +243,25 @@ components:
           items:
             enum: [external_auth, rate_limit, access_logs]
       additionalProperties: false
+    EdgePolicyProfile:
+      type: object
+      required: [product_family, edge_profile, required_features, allowed_features, notes]
+      properties:
+        product_family:
+          type: string
+        edge_profile:
+          type: string
+        required_features:
+          type: array
+          items:
+            enum: [external_auth, rate_limit, access_logs]
+        allowed_features:
+          type: array
+          items:
+            enum: [external_auth, rate_limit, access_logs]
+        notes:
+          type: string
+      additionalProperties: false
     RouteRule:
       type: object
       required: [prefix, backend]
@@ -213,11 +282,19 @@ components:
               maximum: 65535
           additionalProperties: false
       additionalProperties: false
+    OperationResponse:
+      $ref: '#/components/schemas/OperationAccepted'
     OperationAccepted:
       type: object
-      required: [operation]
+      required: [operation, service_id, state, description]
       properties:
         operation:
+          type: string
+        service_id:
+          type: string
+        state:
+          enum: [in_progress, succeeded, failed, requires_attention]
+        description:
           type: string
       additionalProperties: false
     OperationState:

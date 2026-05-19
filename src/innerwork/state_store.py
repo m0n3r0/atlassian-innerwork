@@ -7,6 +7,7 @@ from typing import Any
 
 from .model import EdgeServiceSpec
 from .serialization import spec_from_dict, spec_to_dict
+from .state_store_base import IdempotencyRecord
 
 STATE_SCHEMA_VERSION = 1
 
@@ -53,3 +54,15 @@ class JsonStateStore:
             handle.write(encoded)
             temporary_path = Path(handle.name)
         temporary_path.replace(self.path)
+
+    def load_operations(self) -> tuple[Any, ...]:
+        return ()
+
+    def save_operation(self, result: Any) -> None:
+        return None
+
+    def get_idempotency_record(self, key: str) -> IdempotencyRecord | None:
+        return None
+
+    def save_idempotency_record(self, record: IdempotencyRecord) -> None:
+        return None

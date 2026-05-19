@@ -108,6 +108,28 @@ def canonical_domain(domain: str) -> str:
 
 
 @dataclass(frozen=True)
+class EdgePolicyProfile:
+    product_family: str
+    edge_profile: str
+    required_features: tuple[str, ...]
+    allowed_features: tuple[str, ...]
+    notes: str
+
+
+EDGE_POLICY_PROFILES: dict[tuple[str, str], EdgePolicyProfile] = {
+    (family, profile): EdgePolicyProfile(
+        product_family=family,
+        edge_profile=profile,
+        required_features=("access_logs",),
+        allowed_features=tuple(sorted(_ALLOWED_FEATURES)),
+        notes="Phase 2 default: access logs are always rendered; auth and rate limits are opt-in.",
+    )
+    for family, profiles in _ALLOWED_PROFILES_BY_FAMILY.items()
+    for profile in profiles
+}
+
+
+@dataclass(frozen=True)
 class Backend:
     """A backend service target reachable from the edge proxy fleet."""
 
@@ -175,6 +197,10 @@ class EdgeServiceSpec:
             raise ValueError(
                 f"edge_profile {self.edge_profile} is not allowed for {self.product_family}"
             )
+        if (self.product_family, self.edge_profile) not in EDGE_POLICY_PROFILES:
+            raise ValueError(
+                f"missing policy profile for {self.product_family}/{self.edge_profile}"
+            )
         if not self.domains:
             raise ValueError("at least one domain is required")
         if len(set(self.domains)) != len(self.domains):
@@ -186,6 +212,13 @@ class EdgeServiceSpec:
         for feature in self.features:
             if feature not in _ALLOWED_FEATURES:
                 raise ValueError(f"unsupported feature: {feature}")
+        policy = EDGE_POLICY_PROFILES[(self.product_family, self.edge_profile)]
+        unsupported_for_profile = set(self.features).difference(policy.allowed_features)
+        if unsupported_for_profile:
+            feature = sorted(unsupported_for_profile)[0]
+            raise ValueError(
+                f"feature {feature} is not allowed for {self.product_family}/{self.edge_profile}"
+            )
         backend_ports: dict[str, int] = {}
         for route in self.routes:
             route.validate()

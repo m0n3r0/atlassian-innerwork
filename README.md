@@ -42,6 +42,7 @@ uv run innerwork phases
 uv run innerwork validate examples/edge-service.yaml
 uv run innerwork render examples/edge-service.yaml
 uv run innerwork serve --state .innerwork/state.json
+uv run innerwork serve --database-url sqlite:///.innerwork/innerwork.db
 ```
 
 ## Minimal API example
@@ -49,6 +50,7 @@ uv run innerwork serve --state .innerwork/state.json
 ```bash
 curl -sS -X PUT http://127.0.0.1:8000/v2/service_instances/jira-web \
   -H 'content-type: application/json' \
+  -H 'X-Idempotency-Key: demo-jira-web-0001' \
   -d '{
     "service_id": "jira-web",
     "owner": "jira-platform",
@@ -65,11 +67,12 @@ curl -sS http://127.0.0.1:8000/v2/control-plane/snapshot
 ## What is in the repo
 
 - `src/innerwork/model.py` — fail-closed service intent model and validation rules.
-- `src/innerwork/broker.py` — in-memory OSB-inspired provisioning broker.
+- `src/innerwork/broker.py` — OSB-inspired provisioning broker with idempotent operation tracking.
 - `src/innerwork/control_plane.py` — deterministic xDS-style snapshot renderer.
 - `src/innerwork/app.py` — FastAPI live application.
 - `src/innerwork/cli.py` — local contributor CLI.
 - `src/innerwork/state_store.py` — optional JSON state store for restart-safe demos.
+- `src/innerwork/sql_state_store.py` — local SQLite store for durable Phase 2 services, operations, and idempotency keys.
 - `data/product_catalog.json` — public product catalog grounding.
 - `data/production_oss_phases.json` — phased open-source production plan.
 - `spec/openapi.yaml` — hand-authored API contract reference.

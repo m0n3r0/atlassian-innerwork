@@ -16,11 +16,14 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 def test_cli_serve_prints_uvicorn_command_without_starting_server(tmp_path: Path):
     state_file = tmp_path / "innerwork-state.json"
+    database_url = f"sqlite:///{tmp_path / 'innerwork.db'}"
 
     result = _run_cli(
         "serve",
         "--state",
         str(state_file),
+        "--database-url",
+        database_url,
         "--dry-run",
         "--host",
         "0.0.0.0",
@@ -41,5 +44,8 @@ def test_cli_serve_prints_uvicorn_command_without_starting_server(tmp_path: Path
             "--port",
             "9000",
         ],
-        "environment": {"INNERWORK_STATE_PATH": str(state_file)},
+        "environment": {
+            "INNERWORK_DATABASE_URL": database_url,
+            "INNERWORK_STATE_PATH": str(state_file),
+        },
     }

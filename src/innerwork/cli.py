@@ -42,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", default="8000", help="Bind port, default: 8000")
     serve.add_argument("--state", type=Path, help="Optional JSON state file for restart-safe demos")
     serve.add_argument(
+        "--database-url",
+        help="Optional durable SQLite URL, e.g. sqlite:///.innerwork/innerwork.db",
+    )
+    serve.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the uvicorn command and environment instead of starting the server",
@@ -75,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(snapshot_to_dict(ControlPlane(broker).snapshot()))
         return 0
     if args.command == "serve":
-        return _serve(args.host, args.port, args.state, args.dry_run)
+        return _serve(args.host, args.port, args.state, args.database_url, args.dry_run)
     raise AssertionError(f"unhandled command: {args.command}")
 
 
@@ -94,7 +98,13 @@ def _extract_spec(raw: Any) -> dict[str, Any]:
     return spec
 
 
-def _serve(host: str, port: str, state: Path | None, dry_run: bool) -> int:
+def _serve(
+    host: str,
+    port: str,
+    state: Path | None,
+    database_url: str | None,
+    dry_run: bool,
+) -> int:
     command = [
         sys.executable,
         "-m",
@@ -110,6 +120,9 @@ def _serve(host: str, port: str, state: Path | None, dry_run: bool) -> int:
     if state is not None:
         environment["INNERWORK_STATE_PATH"] = str(state)
         public_environment["INNERWORK_STATE_PATH"] = str(state)
+    if database_url is not None:
+        environment["INNERWORK_DATABASE_URL"] = database_url
+        public_environment["INNERWORK_DATABASE_URL"] = database_url
     if dry_run:
         _print_json({"command": command, "environment": public_environment})
         return 0
