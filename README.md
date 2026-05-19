@@ -19,6 +19,11 @@ uv run pytest -q
 uv run ruff check .
 uv run pyright
 uv run uvicorn innerwork.app:app --reload
+
+# If you are in a plain Python CI image without uv:
+python -m pip install -e . pytest ruff
+python -m pytest -q
+python -m ruff check .
 ```
 
 Open:

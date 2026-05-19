@@ -14,6 +14,11 @@ uv sync --dev
 uv run pytest -q
 uv run ruff check .
 uv run pyright
+
+# CI-compatible fallback if uv is unavailable:
+python -m pip install -e . pytest ruff
+python -m pytest -q
+python -m ruff check .
 ```
 
 To run the live app:
