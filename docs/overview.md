@@ -1,91 +1,70 @@
 # Overview
 
-This repository is a readable, production-oriented reverse engineering of Atlassian's public system-of-work architecture.
+This repository builds **Innerwork**, a clean-room, self-hostable
+work-and-knowledge application inspired by the public roles of Jira (work
+graph) and Confluence (knowledge graph). It is not a clone of Atlassian
+products, not Atlassian-branded, and not a description of Atlassian internals.
 
-It combines two public inputs:
-
-1. the video at https://www.youtube.com/watch?v=55pTFVoclvE, which explains a self-service edge/load-balancing platform built around a broker, workers, Envoy, xDS, regional proxy fleets, and platform sidecars;
-2. the public Atlassian software homepage at https://www.atlassian.com/software, which shows the current product portfolio and how Atlassian groups products into collections, roles, and platform capabilities.
-
-The product scope is deliberately narrower than the full portfolio: **Innerwork** is a Jira/Confluence-inspired work-and-knowledge app, plus a platform/backend proof of concept that makes it runnable. Other Atlassian products are catalog context, not implementation scope.
-
-The result is not an exact internal Atlassian design. It is a clean-room model of the architecture pattern.
+The authoritative product boundary lives in `product-scope.md`. Everything in
+this repo should be readable as "what does Innerwork do today, and what is the
+next slice toward MVP".
 
 ## Product scope in one sentence
 
-Innerwork is building the Jira + Confluence lane only: a work graph plus a knowledge graph with shared identity, permissions, search, links, and audit. Bitbucket, Trello, Loom, Jira Service Management, Statuspage, Guard, Jira Align, and other cataloged products are outside the MVP and should be treated as context only.
+Innerwork = a work graph (projects, work items, workflow, comments) plus a
+knowledge graph (spaces, pages, versions, comments) with shared identity,
+permissions, search, links, and audit. Bitbucket, Trello, Loom, JSM,
+Statuspage, Guard, Align, and the rest of the Atlassian portfolio are
+explicitly out of scope.
 
-## One-page mental model
+## What runs today
 
-```text
-Customers and teams
-        |
-        v
-Product experiences
-Jira | Confluence | Loom | Trello | JSM | Bitbucket | Rovo | Focus | Talent | Align | ...
-        |
-        v
-System-of-work platform
-Identity | Home | Goals | Teams | Search | Chat | Studio | Analytics | Admin | Marketplace
-        |
-        v
-Product/service mesh
-Work graph | Knowledge graph | Team graph | Asset graph | Incident graph | Delivery graph
-        |
-        v
-Self-service edge platform
-Broker API | async workers | durable state | xDS renderer | rollout controller
-        |
-        v
-Regional data plane
-CloudFront/NLB | Envoy fleets | auth/rate-limit/policy sidecars | access logs | metrics
-        |
-        v
-Product backends and internal services
-```
+The currently runnable surface, all behind `INNERWORK_DATABASE_URL` SQLite or
+in-memory:
 
-## Why the video and product page fit together
+- FastAPI app at `src/innerwork/app.py` serving:
+  - a server-rendered landing page at `/`;
+  - generated Swagger UI at `/docs`;
+  - the broker / control-plane API under `/v2/` (legacy from the platform PoC,
+    kept idempotency-keyed and durable);
+  - the Innerwork product-domain API under `/v1/`.
+- Product-domain MVP slices implemented so far:
+  - **Work graph (slice 1)** — projects, work items with project-scoped keys,
+    workflow states (`todo`, `in_progress`, `done`), guarded transitions, and
+    an append-only transition history. See `work-graph-domain.md`.
+  - **Knowledge graph (slice 2)** — spaces, pages, immutable page versions,
+    and typed cross-graph `WorkItem` ↔ `Page` links. See
+    `knowledge-graph-domain.md`.
+- CLI wrappers (`uv run innerwork ...`) for validation, rendering, serving,
+  and basic work-graph operations.
+- Docker Compose PoC with persistent SQLite under `.innerwork/`.
 
-The video focuses on the platform mechanics: how a large company can stop hand-crafting load balancers and instead give product teams a safe self-service abstraction.
+The original "broker / Envoy / xDS / regional proxies" architecture is still
+present in code under `/v2/` because the work-and-knowledge MVP is being built
+on top of it. New product work happens under `/v1/`.
 
-The product page shows why that abstraction matters: Atlassian now exposes many product experiences, collections, and cross-product platform features. A system this broad needs common capabilities for routing, identity, observability, AI, analytics, administration, marketplace integration, compliance, and operational safety.
+## What is next
 
-## Product families reconstructed from the homepage
-
-| Family | Products | What the family contributes |
-| --- | --- | --- |
-| Teamwork core | Jira, Confluence, Loom, Trello, Rovo | Work items, knowledge, async video, lightweight boards, AI search/chat/agents. |
-| Software delivery | Bitbucket, Pipelines, Rovo Dev, DX | Source control, CI/CD, developer agents, engineering metrics, developer intelligence. |
-| Service management | Jira Service Management, Customer Service Management, Assets, Statuspage, Guard | Service workflows, customer service, CMDB/assets, incident comms, cloud security. |
-| Product discovery | Jira Product Discovery, Feedback, Rovo | Ideas, feedback intake, prioritization, roadmaps, AI synthesis. |
-| Strategy | Focus, Talent, Jira Align | Goals, strategic planning, workforce planning, enterprise work alignment. |
-| Cloud platform | Home, Goals, Teams, Studio, Search, Chat, Analytics, Admin | Shared foundation connecting apps into a system of work. |
-| Ecosystem | Marketplace, Community, Partners, Developer resources | Extensibility, support, adoption, integrations. |
-
-See `product-system-map.md` for the full product/collection/platform reconstruction.
+See `production-grade-roadmap.md`. The current focus is finishing Phase B
+(comments + idempotency keys on all `/v1/` mutations), then Phase D
+(identity / permissions / audit), then Phase C (product frontend).
 
 ## Repository shape
 
-- `product-system-map.md` explains the product surface.
-- `grand-design.md` explains the shared platform and edge system.
-- `architecture.html` visualizes the product/platform/edge stack.
-- `production-grade-roadmap.md` turns the design into build phases.
-- `operations-runbook.md`, `threat-model.md`, and `production-readiness-checklist.md` make it operational.
-- `src/innerwork` and `tests` keep the architecture executable enough to catch broken invariants.
+- `src/innerwork/domain.py`, `knowledge.py`, `comments.py`, `domain_store.py`,
+  `domain_api.py` — product-domain models, persistence, and `/v1/` routes.
+- `src/innerwork/app.py`, `broker.py`, `sql_state_store.py`, `model.py` —
+  platform / broker layer kept under `/v2/`.
+- `tests/` — pytest suite covering both layers.
+- `docs/` — current docs; older Atlassian-suite reconstruction documents live
+  under `docs/archive/` for historical context only.
 
-## What to copy from this design
+## Pointers
 
-Good patterns to copy:
-
-- Make internal platforms product-like: stable APIs, clear docs, ownership, examples, and support.
-- Give product teams intent-level abstractions, not raw proxy/networking internals.
-- Centralize high-risk cross-cutting concerns: identity, authorization, rate limits, logs, compliance, rollout safety.
-- Keep the data plane boring and resilient: serve last-known-good config, drain cleanly, canary every change.
-- Treat product integrations as graph problems: work graph, knowledge graph, team graph, service graph, and asset graph.
-
-What not to copy blindly:
-
-- Do not build a multi-region edge platform before one region and one product path are stable.
-- Do not let tenants submit arbitrary Envoy config.
-- Do not introduce AI/agent features without permissioning, provenance, auditability, and rollback.
-- Do not make a product-suite map imply private implementation details.
+- `product-scope.md` — locked product boundary and naming rules.
+- `live-application.md` — concrete run instructions, endpoints, environments.
+- `docker-poc.md` — Docker Compose proof of concept.
+- `work-graph-domain.md`, `knowledge-graph-domain.md` — per-slice domain docs.
+- `production-grade-roadmap.md` — phased plan.
+- `archive/` — historical broker/edge platform documents, not implementation
+  scope.

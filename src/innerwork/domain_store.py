@@ -15,6 +15,12 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .comments import (
+    PageComment,
+    WorkItemComment,
+    validate_author,
+    validate_comment_body,
+)
 from .domain import (
     INITIAL_STATE,
     WORKFLOW_STATES,
@@ -34,7 +40,7 @@ from .knowledge import (
     validate_space_key,
 )
 
-DOMAIN_SCHEMA_VERSION = 2
+DOMAIN_SCHEMA_VERSION = 3
 
 
 def utc_now_iso() -> str:
@@ -73,6 +79,10 @@ class DuplicateSpaceKeyError(ValueError):
 
 class DuplicateLinkError(ValueError):
     """Raised when the same (work_item, page, kind) link already exists."""
+
+
+class CommentNotFoundError(KeyError):
+    """Raised when a comment lookup fails."""
 
 
 class DomainStore:
@@ -653,6 +663,175 @@ class DomainStore:
             ).fetchall()
         return tuple(Link(*row) for row in rows)
 
+    # --------------------------------------------------------------- comments
+    def create_work_item_comment(
+        self,
+        *,
+        comment_id: str,
+        work_item_id: str,
+        author: str,
+        body: str,
+        created_at: str | None = None,
+    ) -> WorkItemComment:
+        self.get_work_item(work_item_id)  # raises WorkItemNotFoundError
+        author_clean = validate_author(author)
+        body_clean = validate_comment_body(body)
+        timestamp = created_at or utc_now_iso()
+        comment = WorkItemComment(
+            comment_id=comment_id,
+            work_item_id=work_item_id,
+            author=author_clean,
+            body=body_clean,
+            created_at=timestamp,
+        )
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO work_item_comments(
+                    comment_id, work_item_id, author, body, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    comment.comment_id,
+                    comment.work_item_id,
+                    comment.author,
+                    comment.body,
+                    comment.created_at,
+                ),
+            )
+        return comment
+
+    def get_work_item_comment(self, comment_id: str) -> WorkItemComment:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT comment_id, work_item_id, author, body, created_at "
+                "FROM work_item_comments WHERE comment_id = ?",
+                (comment_id,),
+            ).fetchone()
+        if row is None:
+            raise CommentNotFoundError(comment_id)
+        return WorkItemComment(*row)
+
+    def list_work_item_comments(self, work_item_id: str) -> tuple[WorkItemComment, ...]:
+        self.get_work_item(work_item_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT comment_id, work_item_id, author, body, created_at
+                FROM work_item_comments
+                WHERE work_item_id = ?
+                ORDER BY created_at, comment_id
+                """,
+                (work_item_id,),
+            ).fetchall()
+        return tuple(WorkItemComment(*row) for row in rows)
+
+    def create_page_comment(
+        self,
+        *,
+        comment_id: str,
+        page_id: str,
+        author: str,
+        body: str,
+        created_at: str | None = None,
+    ) -> PageComment:
+        self.get_page(page_id)  # raises PageNotFoundError
+        author_clean = validate_author(author)
+        body_clean = validate_comment_body(body)
+        timestamp = created_at or utc_now_iso()
+        comment = PageComment(
+            comment_id=comment_id,
+            page_id=page_id,
+            author=author_clean,
+            body=body_clean,
+            created_at=timestamp,
+        )
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO page_comments(
+                    comment_id, page_id, author, body, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    comment.comment_id,
+                    comment.page_id,
+                    comment.author,
+                    comment.body,
+                    comment.created_at,
+                ),
+            )
+        return comment
+
+    def get_page_comment(self, comment_id: str) -> PageComment:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT comment_id, page_id, author, body, created_at "
+                "FROM page_comments WHERE comment_id = ?",
+                (comment_id,),
+            ).fetchone()
+        if row is None:
+            raise CommentNotFoundError(comment_id)
+        return PageComment(*row)
+
+    def list_page_comments(self, page_id: str) -> tuple[PageComment, ...]:
+        self.get_page(page_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT comment_id, page_id, author, body, created_at
+                FROM page_comments
+                WHERE page_id = ?
+                ORDER BY created_at, comment_id
+                """,
+                (page_id,),
+            ).fetchall()
+        return tuple(PageComment(*row) for row in rows)
+
+    # --------------------------------------------------------- idempotency keys
+    def get_idempotent_response(self, *, scope: str, key: str, request_hash: str) -> str | None:
+        """Return a stored response body if ``(scope, key)`` was replayed.
+
+        Returns ``None`` when no record exists. Raises :class:`ValueError`
+        when the same ``(scope, key)`` was used with a different request
+        body; the API layer translates that to HTTP 409.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT request_hash, response_body FROM v1_idempotency_keys "
+                "WHERE scope = ? AND key = ?",
+                (scope, key),
+            ).fetchone()
+        if row is None:
+            return None
+        stored_hash, response_body = row[0], row[1]
+        if stored_hash != request_hash:
+            raise ValueError(
+                f"idempotency key already used with a different request body in scope {scope!r}"
+            )
+        return response_body
+
+    def save_idempotent_response(
+        self,
+        *,
+        scope: str,
+        key: str,
+        request_hash: str,
+        response_body: str,
+        created_at: str | None = None,
+    ) -> None:
+        timestamp = created_at or utc_now_iso()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO v1_idempotency_keys(
+                    scope, key, request_hash, response_body, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (scope, key, request_hash, response_body, timestamp),
+            )
+
     # ------------------------------------------------------------------ internals
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
@@ -793,6 +972,49 @@ class DomainStore:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS work_item_comments (
+                    comment_id TEXT PRIMARY KEY,
+                    work_item_id TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(work_item_id) REFERENCES work_items(work_item_id)
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_work_item_comments_work_item "
+                "ON work_item_comments(work_item_id)"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS page_comments (
+                    comment_id TEXT PRIMARY KEY,
+                    page_id TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(page_id) REFERENCES pages(page_id)
+                )
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_page_comments_page ON page_comments(page_id)"
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS v1_idempotency_keys (
+                    scope TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    response_body TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(scope, key)
+                )
+                """
+            )
+            connection.execute(
+                """
                 INSERT INTO meta(key, value) VALUES ('domain_schema_version', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """,
@@ -825,6 +1047,7 @@ def initialize_meta_table(path: Path | str) -> None:
 
 __all__: Iterable[str] = (
     "DOMAIN_SCHEMA_VERSION",
+    "CommentNotFoundError",
     "DomainStore",
     "DuplicateLinkError",
     "DuplicateProjectKeyError",

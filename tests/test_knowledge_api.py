@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -9,9 +10,19 @@ from fastapi.testclient import TestClient
 from innerwork.app import create_app
 
 
-def _make_client(tmp_path: Path) -> TestClient:
+class _IdemClient(TestClient):
+    """TestClient that auto-injects X-Idempotency-Key on mutating /v1/ calls."""
+
+    def request(self, method, url, *args, headers=None, **kwargs):  # type: ignore[override]
+        if method.upper() in {"POST", "PUT", "DELETE", "PATCH"} and str(url).startswith("/v1/"):
+            headers = dict(headers or {})
+            headers.setdefault("X-Idempotency-Key", uuid.uuid4().hex)
+        return super().request(method, url, *args, headers=headers, **kwargs)
+
+
+def _make_client(tmp_path: Path) -> _IdemClient:
     db = tmp_path / "innerwork.db"
-    return TestClient(create_app(database_url=f"sqlite:///{db}"))
+    return _IdemClient(create_app(database_url=f"sqlite:///{db}"))
 
 
 def test_space_create_list_get(tmp_path: Path):

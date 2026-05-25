@@ -118,17 +118,15 @@ def test_phase_product_references_are_catalog_grounded_and_bounded():
 
 
 def test_docs_and_playbook_are_linked_from_navigation():
-    readme = Path("README.md").read_text()
     docs_index = Path("docs/README.md").read_text()
 
-    assert "docs/production-oss-grand-design.md" in readme
-    assert "docs/autonomous-kanban-playbook.md" in readme
-    assert "production-oss-grand-design.md" in docs_index
-    assert "autonomous-kanban-playbook.md" in docs_index
+    # Archived docs remain accessible under docs/archive/ for historical context.
+    assert "archive/production-oss-grand-design.md" in docs_index
+    assert "archive/autonomous-kanban-playbook.md" in docs_index
 
 
 def test_playbook_contains_autonomous_iteration_and_stop_conditions():
-    playbook = Path("docs/autonomous-kanban-playbook.md").read_text()
+    playbook = Path("docs/archive/autonomous-kanban-playbook.md").read_text()
 
     for required in (
         "Serial review-gated stack",

@@ -1,32 +1,42 @@
 # Documentation Index
 
-Start here:
+This repo builds **Innerwork**, a clean-room, self-hostable work-and-knowledge
+application inspired by the public roles of Jira and Confluence. The
+authoritative scope and naming rules live in `product-scope.md`. Everything
+else either describes what currently runs or what is planned next.
+
+## Start here
 
 1. `product-scope.md` — exact product boundary: Innerwork = Jira/Confluence-inspired work + knowledge only.
-2. `docker-poc.md` — Docker Compose proof of concept and smoke-test commands.
-3. `live-application.md` — frontend/backend boundaries, FastAPI app, CLI, and Docker/Python run modes.
-4. `overview.md` — easiest end-to-end explanation of the repo.
-5. `product-system-map.md` — product-by-product reconstruction from the Atlassian software homepage.
-6. `grand-design.md` — production-grade platform and edge architecture.
-7. `architecture.html` — standalone architecture diagram.
-8. `production-oss-grand-design.md` — clean-room Jira + Confluence-inspired open-source application phases.
-9. `autonomous-kanban-playbook.md` — autonomous Kanban execution and review loop.
+2. `overview.md` — short, current explanation of the repo and where the build is.
+3. `live-application.md` — how to run the app (Python, Docker), HTTP endpoints, CLI.
+4. `docker-poc.md` — Docker Compose proof of concept and smoke tests.
 
-Reference docs:
+## Product-domain reference
 
-- `product-scope.md` — scope boundary for the Innerwork product.
-- `docker-poc.md` — Docker Compose PoC and smoke-test workflow.
-- `live-application.md` — frontend/backend boundaries plus FastAPI app and contributor CLI.
-- `production-grade-roadmap.md` — staged implementation roadmap.
-- `production-oss-grand-design.md` — from idea to production-ready OSS phase design.
-- `autonomous-kanban-playbook.md` — Kanban playbook with non-hallucination gates and iteration policy.
-- `production-readiness-checklist.md` — launch checklist.
-- `operations-runbook.md` — operational runbooks and incident response.
-- `threat-model.md` — trust boundaries, assets, threats, and mitigations.
-- `adr-001-edge-platform-shape.md` — architectural decision record.
+These document the currently implemented MVP slices under `/v1/`.
 
-Research notes live in `../research/`:
+- `work-graph-domain.md` — projects, work items, workflow transitions (Phase B slice 1).
+- `knowledge-graph-domain.md` — spaces, pages, immutable page versions, cross-graph WorkItem ↔ Page links (Phase B slice 2).
+- `comments-and-idempotency.md` — work-item / page comments and the `X-Idempotency-Key` contract on all `/v1/` mutations (Phase B slice 3).
+- `production-grade-roadmap.md` — phased roadmap from PoC to production.
 
-- `video-transcript.md` — timestamped transcript from the source video.
-- `software-page-extract.md` — normalized public software-homepage extraction.
-- `source-notes.md` — source list and clean-room caveat.
+## Archive
+
+Earlier exploratory documents that described a broader Atlassian-suite
+broker/edge-platform vision now live in `archive/`. They are kept for
+historical context only and **must not** drive new implementation work;
+the product scope is locked to Innerwork (work graph + knowledge graph).
+
+- `archive/grand-design.md`, `archive/product-system-map.md`,
+  `archive/production-oss-grand-design.md` — the original Atlassian-suite
+  reconstruction documents.
+- `archive/operations-runbook.md`, `archive/threat-model.md`,
+  `archive/production-readiness-checklist.md` — operations/security/readiness
+  docs aimed at the broker/edge platform, not the Innerwork product-domain
+  surface. They will be rewritten against the product-domain API once Phase D
+  (identity/permission/audit) lands.
+- `archive/autonomous-kanban-playbook.md`,
+  `archive/adr-001-edge-platform-shape.md`, `archive/architecture.html` —
+  historical execution playbook and edge ADR; superseded by the current
+  roadmap and the product-domain ADR work to come.
