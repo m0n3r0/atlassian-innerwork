@@ -25,8 +25,16 @@ from .domain import (
     assert_transition_allowed,
     validate_project_key,
 )
+from .knowledge import (
+    Link,
+    Page,
+    PageVersion,
+    Space,
+    validate_link_kind,
+    validate_space_key,
+)
 
-DOMAIN_SCHEMA_VERSION = 1
+DOMAIN_SCHEMA_VERSION = 2
 
 
 def utc_now_iso() -> str:
@@ -45,6 +53,26 @@ class WorkItemNotFoundError(KeyError):
 
 class DuplicateProjectKeyError(ValueError):
     """Raised when a project key is reused."""
+
+
+class SpaceNotFoundError(KeyError):
+    """Raised when a space lookup fails."""
+
+
+class PageNotFoundError(KeyError):
+    """Raised when a page lookup fails."""
+
+
+class LinkNotFoundError(KeyError):
+    """Raised when a link lookup fails."""
+
+
+class DuplicateSpaceKeyError(ValueError):
+    """Raised when a space key is reused."""
+
+
+class DuplicateLinkError(ValueError):
+    """Raised when the same (work_item, page, kind) link already exists."""
 
 
 class DomainStore:
@@ -304,6 +332,327 @@ class DomainStore:
             for row in rows
         )
 
+    # ------------------------------------------------------------------ spaces
+    def create_space(
+        self,
+        *,
+        space_id: str,
+        key: str,
+        name: str,
+        owner: str,
+        created_at: str | None = None,
+    ) -> Space:
+        validate_space_key(key)
+        timestamp = created_at or utc_now_iso()
+        space = Space(
+            space_id=space_id,
+            key=key,
+            name=name,
+            owner=owner,
+            created_at=timestamp,
+        )
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO spaces(space_id, key, name, owner, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        space.space_id,
+                        space.key,
+                        space.name,
+                        space.owner,
+                        space.created_at,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            if "spaces.key" in str(exc) or "UNIQUE" in str(exc).upper():
+                raise DuplicateSpaceKeyError(f"space key already exists: {key!r}") from exc
+            raise
+        return space
+
+    def get_space(self, space_id: str) -> Space:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT space_id, key, name, owner, created_at FROM spaces WHERE space_id = ?",
+                (space_id,),
+            ).fetchone()
+        if row is None:
+            raise SpaceNotFoundError(space_id)
+        return Space(*row)
+
+    def list_spaces(self) -> tuple[Space, ...]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT space_id, key, name, owner, created_at FROM spaces ORDER BY key"
+            ).fetchall()
+        return tuple(Space(*row) for row in rows)
+
+    # ------------------------------------------------------------------- pages
+    def create_page(
+        self,
+        *,
+        page_id: str,
+        space_id: str,
+        title: str,
+        body: str,
+        author: str,
+        created_at: str | None = None,
+    ) -> tuple[Page, PageVersion]:
+        self.get_space(space_id)  # raises SpaceNotFoundError
+        timestamp = created_at or utc_now_iso()
+        author_clean = (author or "").strip()
+        if not author_clean:
+            raise ValueError("author must be a non-blank string")
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO pages(
+                    page_id, space_id, current_version, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (page_id, space_id, 1, timestamp, timestamp),
+            )
+            cursor = connection.execute(
+                """
+                INSERT INTO page_versions(
+                    page_id, version_number, title, body, author, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (page_id, 1, title.strip(), body, author_clean, timestamp),
+            )
+            version_id = int(cursor.lastrowid or 0)
+        page = Page(
+            page_id=page_id,
+            space_id=space_id,
+            current_version=1,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        version = PageVersion(
+            version_id=version_id,
+            page_id=page_id,
+            version_number=1,
+            title=title.strip(),
+            body=body,
+            author=author_clean,
+            created_at=timestamp,
+        )
+        return page, version
+
+    def update_page(
+        self,
+        *,
+        page_id: str,
+        title: str,
+        body: str,
+        author: str,
+        created_at: str | None = None,
+    ) -> tuple[Page, PageVersion]:
+        page = self.get_page(page_id)
+        timestamp = created_at or utc_now_iso()
+        author_clean = (author or "").strip()
+        if not author_clean:
+            raise ValueError("author must be a non-blank string")
+        new_version_number = page.current_version + 1
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO page_versions(
+                    page_id, version_number, title, body, author, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    page_id,
+                    new_version_number,
+                    title.strip(),
+                    body,
+                    author_clean,
+                    timestamp,
+                ),
+            )
+            version_id = int(cursor.lastrowid or 0)
+            connection.execute(
+                "UPDATE pages SET current_version = ?, updated_at = ? WHERE page_id = ?",
+                (new_version_number, timestamp, page_id),
+            )
+        new_page = Page(
+            page_id=page.page_id,
+            space_id=page.space_id,
+            current_version=new_version_number,
+            created_at=page.created_at,
+            updated_at=timestamp,
+        )
+        version = PageVersion(
+            version_id=version_id,
+            page_id=page_id,
+            version_number=new_version_number,
+            title=title.strip(),
+            body=body,
+            author=author_clean,
+            created_at=timestamp,
+        )
+        return new_page, version
+
+    def get_page(self, page_id: str) -> Page:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT page_id, space_id, current_version, created_at, updated_at "
+                "FROM pages WHERE page_id = ?",
+                (page_id,),
+            ).fetchone()
+        if row is None:
+            raise PageNotFoundError(page_id)
+        return Page(*row)
+
+    def list_pages(self, *, space_id: str | None = None) -> tuple[Page, ...]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if space_id is not None:
+            clauses.append("space_id = ?")
+            params.append(space_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT page_id, space_id, current_version, created_at, updated_at "
+                "FROM pages" + where + " ORDER BY created_at, page_id",
+                tuple(params),
+            ).fetchall()
+        return tuple(Page(*row) for row in rows)
+
+    def get_page_version(self, page_id: str, version_number: int) -> PageVersion:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT version_id, page_id, version_number, title, body, author, created_at
+                FROM page_versions
+                WHERE page_id = ? AND version_number = ?
+                """,
+                (page_id, version_number),
+            ).fetchone()
+        if row is None:
+            raise PageNotFoundError(f"{page_id}@v{version_number}")
+        return PageVersion(*row)
+
+    def list_page_versions(self, page_id: str) -> tuple[PageVersion, ...]:
+        self.get_page(page_id)  # raises PageNotFoundError
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT version_id, page_id, version_number, title, body, author, created_at
+                FROM page_versions
+                WHERE page_id = ?
+                ORDER BY version_number
+                """,
+                (page_id,),
+            ).fetchall()
+        return tuple(PageVersion(*row) for row in rows)
+
+    # ------------------------------------------------------------------- links
+    def create_link(
+        self,
+        *,
+        link_id: str,
+        work_item_id: str,
+        page_id: str,
+        kind: str,
+        created_by: str,
+        created_at: str | None = None,
+    ) -> Link:
+        cleaned_kind = validate_link_kind(kind)
+        # Integrity: both endpoints must exist.
+        self.get_work_item(work_item_id)
+        self.get_page(page_id)
+        timestamp = created_at or utc_now_iso()
+        created_by_clean = (created_by or "").strip()
+        if not created_by_clean:
+            raise ValueError("created_by must be a non-blank string")
+        link = Link(
+            link_id=link_id,
+            work_item_id=work_item_id,
+            page_id=page_id,
+            kind=cleaned_kind,
+            created_by=created_by_clean,
+            created_at=timestamp,
+        )
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO work_item_page_links(
+                        link_id, work_item_id, page_id, kind, created_by, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        link.link_id,
+                        link.work_item_id,
+                        link.page_id,
+                        link.kind,
+                        link.created_by,
+                        link.created_at,
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            msg = str(exc)
+            if "ux_work_item_page_links_triple" in msg or "UNIQUE" in msg.upper():
+                raise DuplicateLinkError(
+                    "link already exists for "
+                    f"(work_item_id={work_item_id!r}, page_id={page_id!r}, kind={cleaned_kind!r})"
+                ) from exc
+            raise
+        return link
+
+    def delete_link(self, link_id: str) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM work_item_page_links WHERE link_id = ?",
+                (link_id,),
+            )
+            if cursor.rowcount == 0:
+                raise LinkNotFoundError(link_id)
+
+    def get_link(self, link_id: str) -> Link:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT link_id, work_item_id, page_id, kind, created_by, created_at
+                FROM work_item_page_links WHERE link_id = ?
+                """,
+                (link_id,),
+            ).fetchone()
+        if row is None:
+            raise LinkNotFoundError(link_id)
+        return Link(*row)
+
+    def list_links_for_work_item(self, work_item_id: str) -> tuple[Link, ...]:
+        self.get_work_item(work_item_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT link_id, work_item_id, page_id, kind, created_by, created_at
+                FROM work_item_page_links
+                WHERE work_item_id = ?
+                ORDER BY created_at, link_id
+                """,
+                (work_item_id,),
+            ).fetchall()
+        return tuple(Link(*row) for row in rows)
+
+    def list_links_for_page(self, page_id: str) -> tuple[Link, ...]:
+        self.get_page(page_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT link_id, work_item_id, page_id, kind, created_by, created_at
+                FROM work_item_page_links
+                WHERE page_id = ?
+                ORDER BY created_at, link_id
+                """,
+                (page_id,),
+            ).fetchall()
+        return tuple(Link(*row) for row in rows)
+
     # ------------------------------------------------------------------ internals
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
@@ -378,6 +727,72 @@ class DomainStore:
             )
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS spaces (
+                    space_id TEXT PRIMARY KEY,
+                    key TEXT NOT NULL UNIQUE,
+                    name TEXT NOT NULL,
+                    owner TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS pages (
+                    page_id TEXT PRIMARY KEY,
+                    space_id TEXT NOT NULL,
+                    current_version INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(space_id) REFERENCES spaces(space_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS page_versions (
+                    version_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    page_id TEXT NOT NULL,
+                    version_number INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    author TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(page_id, version_number),
+                    FOREIGN KEY(page_id) REFERENCES pages(page_id)
+                )
+                """
+            )
+            connection.execute("CREATE INDEX IF NOT EXISTS ix_pages_space ON pages(space_id)")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS work_item_page_links (
+                    link_id TEXT PRIMARY KEY,
+                    work_item_id TEXT NOT NULL,
+                    page_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(work_item_id) REFERENCES work_items(work_item_id),
+                    FOREIGN KEY(page_id) REFERENCES pages(page_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_work_item_page_links_triple
+                ON work_item_page_links(work_item_id, page_id, kind)
+                """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_links_work_item "
+                "ON work_item_page_links(work_item_id)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS ix_links_page ON work_item_page_links(page_id)"
+            )
+            connection.execute(
+                """
                 INSERT INTO meta(key, value) VALUES ('domain_schema_version', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 """,
@@ -411,8 +826,13 @@ def initialize_meta_table(path: Path | str) -> None:
 __all__: Iterable[str] = (
     "DOMAIN_SCHEMA_VERSION",
     "DomainStore",
+    "DuplicateLinkError",
     "DuplicateProjectKeyError",
+    "DuplicateSpaceKeyError",
+    "LinkNotFoundError",
+    "PageNotFoundError",
     "ProjectNotFoundError",
+    "SpaceNotFoundError",
     "WorkItemNotFoundError",
     "initialize_meta_table",
     "utc_now_iso",
