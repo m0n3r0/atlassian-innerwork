@@ -115,7 +115,6 @@ def test_openapi_documents_idempotency_operation_schema_and_profile_policy():
     policies = client.get("/v2/policy-profiles").json()
     assert policies["profiles"][0]["product_family"]
     assert any(
-        policy["product_family"] == "teamwork_core"
-        and policy["edge_profile"] == "web_app_api"
+        policy["product_family"] == "teamwork_core" and policy["edge_profile"] == "web_app_api"
         for policy in policies["profiles"]
     )

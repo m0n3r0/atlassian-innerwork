@@ -235,8 +235,7 @@ class EdgeServiceSpec:
                 self.edge_profile,
                 self.domains,
                 tuple(
-                    (route.prefix, route.backend.name, route.backend.port)
-                    for route in self.routes
+                    (route.prefix, route.backend.name, route.backend.port) for route in self.routes
                 ),
                 self.features,
             )

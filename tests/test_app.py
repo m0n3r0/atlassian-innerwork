@@ -40,11 +40,12 @@ def test_live_app_provisions_service_and_renders_snapshot():
     assert body["state"] == "succeeded"
     assert body["service_id"] == "jira-web"
     operation = body["operation"]
-    assert client.get(
-        f"/v2/service_instances/jira-web/last_operation?operation={operation}"
-    ).json()[
-        "state"
-    ] == "succeeded"
+    assert (
+        client.get(f"/v2/service_instances/jira-web/last_operation?operation={operation}").json()[
+            "state"
+        ]
+        == "succeeded"
+    )
     service = client.get("/v2/service_instances/jira-web").json()
     assert service["domains"] == ["jira.example.com"]
     snapshot = client.get("/v2/control-plane/snapshot").json()

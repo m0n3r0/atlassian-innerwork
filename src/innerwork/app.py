@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
 from .control_plane import ControlPlane
+from .domain_api import create_domain_router
+from .domain_store import DomainStore
 from .model import EDGE_POLICY_PROFILES
 from .serialization import (
     operation_result_to_dict,
@@ -66,11 +69,26 @@ class AppState:
         state_path: Path | str | None = None,
         database_url: str | None = None,
     ) -> None:
+        domain_db_path: Path | None = None
         if database_url is not None:
-            state_store = SqliteStateStore(_sqlite_path_from_url(database_url))
+            sqlite_path = _sqlite_path_from_url(database_url)
+            state_store = SqliteStateStore(sqlite_path)
+            domain_db_path = sqlite_path
         else:
             state_store = JsonStateStore(state_path) if state_path is not None else None
         self.broker = EdgeBroker(state_store=state_store)
+        # The work-graph domain always has a store. When no durable SQLite
+        # URL is configured we use an ephemeral per-process SQLite file so
+        # the /v1/ surface is exercisable from tests and demos. (Note: we
+        # cannot use ``:memory:`` because the store opens a fresh connection
+        # per call.)
+        if domain_db_path is None:
+            tmp = tempfile.NamedTemporaryFile(
+                prefix="innerwork-domain-", suffix=".db", delete=False
+            )
+            tmp.close()
+            domain_db_path = Path(tmp.name)
+        self.domain_store = DomainStore(domain_db_path)
 
 
 def create_app(
@@ -89,6 +107,7 @@ def create_app(
         ),
     )
     state = AppState(state_path=resolved_state_path, database_url=resolved_database_url)
+    app.include_router(create_domain_router(state.domain_store))
 
     @app.get("/", include_in_schema=False)
     def home() -> HTMLResponse:
