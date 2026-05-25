@@ -33,8 +33,7 @@ def test_selected_products_are_exactly_jira_and_confluence_and_grounded():
     assert set(phase_catalog["selected_products"]) <= product_ids
 
     grounding = {
-        entry["product_id"]: entry
-        for entry in phase_catalog["selected_product_grounding"]
+        entry["product_id"]: entry for entry in phase_catalog["selected_product_grounding"]
     }
     assert set(grounding) == {"jira", "confluence"}
     assert grounding["jira"]["catalog_role"] == "Primary work graph and workflow engine."
@@ -96,9 +95,7 @@ def test_phase_product_references_are_catalog_grounded_and_bounded():
     }
 
     forbidden_product_tokens = {
-        product["id"]
-        for product in product_catalog["products"]
-        if product["id"] not in selected
+        product["id"] for product in product_catalog["products"] if product["id"] not in selected
     }
 
     def token_is_present(serialized: str, token: str) -> bool:
@@ -113,9 +110,9 @@ def test_phase_product_references_are_catalog_grounded_and_bounded():
     for phase in phase_catalog["phases"]:
         serialized = json.dumps(phase).lower()
         for token in forbidden_product_tokens:
-            assert not token_is_present(
-                serialized, token
-            ), f"phase {phase['id']} references unsupported product token {token}"
+            assert not token_is_present(serialized, token), (
+                f"phase {phase['id']} references unsupported product token {token}"
+            )
         explicit_refs = set(phase.get("product_refs", []))
         assert explicit_refs <= allowed_tokens
 

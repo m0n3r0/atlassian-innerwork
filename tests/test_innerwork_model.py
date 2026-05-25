@@ -179,6 +179,7 @@ def test_product_family_edge_profile_mismatch_fails_closed():
     assert result.state == "failed"
     assert "edge_profile git_code is not allowed for service_management" in result.description
 
+
 def test_backend_name_port_conflict_is_rejected():
     broker = EdgeBroker()
     spec = EdgeServiceSpec(
