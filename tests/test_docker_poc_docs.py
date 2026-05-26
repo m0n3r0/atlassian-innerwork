@@ -23,7 +23,7 @@ def test_docker_assets_document_single_container_poc():
 
 
 def test_docs_make_product_scope_and_frontend_backend_boundaries_explicit():
-    grand_design = _read("docs/production-oss-grand-design.md")
+    grand_design = _read("docs/archive/production-oss-grand-design.md")
     live_guide = _read("docs/live-application.md")
     roadmap = _read("docs/production-grade-roadmap.md")
     product_scope = _read("docs/product-scope.md")

@@ -43,26 +43,35 @@ Exit criteria:
 
 ## Phase B — Work-and-knowledge MVP domain
 
+Status:
+
+- slice 1 (`Project` + `WorkItem` + workflow transitions): **shipped**, see `work-graph-domain.md`;
+- slice 2 (`Space` + `Page` + immutable `PageVersion` + cross-graph links): **shipped**, see `knowledge-graph-domain.md`;
+- slice 3 (`WorkItemComment` + `PageComment` + idempotency-keyed mutations on `/v1/`): **shipped**, see `comments-and-idempotency.md`.
+
 Build:
 
-- project and work-item models;
-- workflow states and transitions;
-- space and page models;
-- immutable page versions;
-- comments on work items and pages;
-- bidirectional links between work items and pages.
+- project and work-item models (done);
+- workflow states and transitions (done);
+- space and page models (done);
+- immutable page versions (done);
+- typed bidirectional links between work items and pages (done);
+- comments on work items and pages (done);
+- `X-Idempotency-Key` required on all `/v1/` mutating routes, matching the existing `/v2/` broker policy (done).
 
 Tests:
 
-- create/read/update work item;
-- transition work item with invalid transition rejection;
-- create/read/version page;
-- link work item to page and enforce both ends exist;
-- persist all MVP entities in SQLite.
+- create/read/update work item (done);
+- transition work item with invalid transition rejection (done);
+- create/read/version page (done);
+- link work item to page and enforce both ends exist (done);
+- persist all MVP entities in SQLite (done);
+- comment lifecycle on work items and pages (done);
+- idempotent replay of `/v1/` mutations returns the original result without side effects (done).
 
 Exit criteria:
 
-- one Dockerized demo can create a project, create a work item, create a space, create a page, link them, restart, and read them back.
+- one Dockerized demo can create a project, create a work item, create a space, create a page, link them, comment on both, restart, and read everything back; replaying any `/v1/` mutation with the same `X-Idempotency-Key` does not create a duplicate. **Met.**
 
 ## Phase C — Product frontend
 
