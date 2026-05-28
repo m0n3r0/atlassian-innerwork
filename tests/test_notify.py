@@ -32,7 +32,6 @@ from innerwork.notify import (
     validate_event_kind,
 )
 
-
 # --------------------------------------------------------------- parse_mentions
 
 
@@ -95,8 +94,12 @@ def _user(uid: str, handle: str, display: str | None = None) -> User:
 
 def test_user_directory_register_and_resolve():
     d = UserDirectory([_user("u1", "alice"), _user("u2", "bob")])
-    assert d.get("u1").handle == "alice"
-    assert d.get_by_handle("ALICE").user_id == "u1"
+    user_a = d.get("u1")
+    assert user_a is not None
+    assert user_a.handle == "alice"
+    user_by_handle = d.get_by_handle("ALICE")
+    assert user_by_handle is not None
+    assert user_by_handle.user_id == "u1"
     resolved = d.resolve_handles(["alice", "bob", "alice", "missing"])
     assert tuple(u.user_id for u in resolved) == ("u1", "u2")
 

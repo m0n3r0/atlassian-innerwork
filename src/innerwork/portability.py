@@ -18,7 +18,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from .domain_store import DOMAIN_SCHEMA_VERSION, DomainStore
 

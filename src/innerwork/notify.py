@@ -34,9 +34,9 @@ from the event kind and the actor/target identifiers.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
-from datetime import datetime, time, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -345,7 +345,7 @@ class Notifier:
         preferences: Mapping[str, NotificationPreferences] | None = None,
         *,
         rate_limit: RateLimitConfig | None = None,
-        clock: "callable[[], datetime] | None" = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._directory = directory
         self._prefs: dict[str, NotificationPreferences] = dict(preferences or {})
