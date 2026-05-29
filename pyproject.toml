@@ -10,6 +10,33 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "m0n3r0" }]
+keywords = [
+    "atlassian",
+    "jira",
+    "confluence",
+    "edge-broker",
+    "control-plane",
+    "envoy",
+    "open-service-broker",
+    "platform-engineering",
+    "reference-implementation",
+    "fastapi",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: System :: Systems Administration",
+    "Typing :: Typed",
+]
+
 dependencies = [
     "fastapi>=0.136.1",
     "httpx>=0.28.1",
@@ -17,6 +44,13 @@ dependencies = [
     "pyyaml>=6.0.3",
     "uvicorn[standard]>=0.47.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/m0n3r0/atlassian-innerwork"
+Source = "https://github.com/m0n3r0/atlassian-innerwork"
+Documentation = "https://github.com/m0n3r0/atlassian-innerwork#readme"
+Issues = "https://github.com/m0n3r0/atlassian-innerwork/issues"
+Changelog = "https://github.com/m0n3r0/atlassian-innerwork/blob/main/CHANGELOG.md"
 
 [project.scripts]
 innerwork = "innerwork.cli:main"
