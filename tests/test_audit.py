@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, Literal
 
 import pytest
 
 from innerwork.audit import (
     AuditAppendOnlyError,  # noqa: F401  (re-exported for convenience)
+    AuditEvent,
     JsonlAuditSink,
     MemoryAuditSink,
     SqliteAuditSink,
@@ -17,17 +20,31 @@ from innerwork.audit import (
 )
 
 
-def _event(**overrides):
-    base = dict(
-        actor="alice",
-        actor_kind="user",
-        surface="jira_workflow",
-        entity_kind="WorkItem",
-        entity_id="WI-1",
-        action="transition",
+def _event(
+    *,
+    actor: str = "alice",
+    actor_kind: Literal["system", "user", "service"] = "user",
+    surface: str = "jira_workflow",
+    entity_kind: str = "WorkItem",
+    entity_id: str = "WI-1",
+    action: str = "transition",
+    before: Mapping[str, Any] | None = None,
+    after: Mapping[str, Any] | None = None,
+    metadata: Mapping[str, Any] | None = None,
+    ts: float | None = None,
+) -> AuditEvent:
+    return make_event(
+        actor=actor,
+        actor_kind=actor_kind,
+        surface=surface,
+        entity_kind=entity_kind,
+        entity_id=entity_id,
+        action=action,
+        before=before,
+        after=after,
+        metadata=metadata,
+        ts=ts,
     )
-    base.update(overrides)
-    return make_event(**base)
 
 
 def test_memory_sink_round_trip() -> None:
