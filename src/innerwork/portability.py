@@ -182,7 +182,36 @@ def export_domain(store: DomainStore) -> dict[str, Any]:
 def export_domain_json(store: DomainStore, *, indent: int | None = 2) -> str:
     """Return ``export_domain(store)`` serialized to deterministic JSON."""
 
-    return json.dumps(export_domain(store), indent=indent, sort_keys=False)
+    payload = export_domain(store)
+    _audit_portability(store, action="export", counts={k: len(v) for k, v in payload.items()
+                                                       if isinstance(v, list)})
+    return json.dumps(payload, indent=indent, sort_keys=False)
+
+
+def _audit_portability(
+    store: DomainStore,
+    *,
+    action: str,
+    counts: dict[str, int],
+) -> None:
+    """Best-effort audit emission for portability export/import.
+
+    No-op when the store has no audit sink wired (phase 5/6 callers).
+    """
+
+    if getattr(store, "audit_sink", None) is None:
+        return
+    surface = "portability_export" if action == "export" else "portability_import"
+    store._audit(  # noqa: SLF001 — portability is a peer of the store
+        surface=surface,
+        actor="portability",
+        entity_kind="Domain",
+        entity_id=str(store.path),
+        action=action,
+        before=None,
+        after=None,
+        metadata={"counts": counts, "format_version": PORTABILITY_FORMAT_VERSION},
+    )
 
 
 def _rows(
@@ -296,6 +325,7 @@ def import_domain(store: DomainStore, payload: Mapping[str, Any]) -> dict[str, i
             connection, "work_item_transitions", payload.get("transitions", [])
         )
         _bump_autoincrement(connection, "page_versions", payload.get("page_versions", []))
+    _audit_portability(store, action="import", counts=counts)
     return counts
 
 

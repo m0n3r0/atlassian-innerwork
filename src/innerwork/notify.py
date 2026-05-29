@@ -354,6 +354,10 @@ class Notifier:
         self._buckets: dict[str, _Bucket] = {}
         self.dispatched: list[Notification] = []
         self.suppressed: list[SuppressedNotification] = []
+        # Phase 7: optional audit sink for ``mention`` surface (delivery only).
+        # Default None preserves phase 5/6 behavior. Operators wire via
+        # ``notifier.audit_sink = SqliteAuditSink(path)``.
+        self.audit_sink: Any = None
 
     # -- preferences -----------------------------------------------------
     def set_preferences(self, prefs: NotificationPreferences) -> None:
@@ -451,6 +455,25 @@ class Notifier:
             )
             delivered.append(notification)
             self.dispatched.append(notification)
+            if self.audit_sink is not None:
+                from .audit import make_event
+
+                event_audit = make_event(
+                    actor=event.actor,
+                    actor_kind="system",
+                    surface="mention",
+                    entity_kind="Notification",
+                    entity_id=user_id,
+                    action="dispatch",
+                    before=None,
+                    after={"kind": event.kind, "occurred_at": timestamp},
+                    metadata={
+                        "work_item_id": event.work_item_id,
+                        "page_id": event.page_id,
+                        "comment_id": event.comment_id,
+                    },
+                )
+                self.audit_sink.record(event_audit)
         return tuple(delivered)
 
     # -- token bucket ----------------------------------------------------
