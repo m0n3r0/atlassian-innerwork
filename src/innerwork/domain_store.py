@@ -112,13 +112,20 @@ class DomainStore:
     ) -> None:
         """Install or clear a change-notification callback.
 
-        The hook is invoked as ``hook(entity, action, identifier)`` where:
+        The hook is invoked as ``hook(entity, action, identifier)``.
 
-        * ``entity`` — ``"project"``, ``"space"``, ``"work_item"``, ``"page"``.
-        * ``action`` — ``"created"``, ``"updated"``, ``"deleted"``.
-        * ``identifier`` — primary key string.
+        Current wired emissions (Phase 6):
 
-        Used by :mod:`innerwork.search` to invalidate its inverted index.
+        * ``("project", "created", project_id)`` — after ``create_project``.
+        * ``("space",   "created", space_id)``   — after ``create_space``.
+
+        Mutation paths for ``work_item``, ``page``, ``page_version``,
+        ``transition``, ``comment``, and ``link`` do NOT currently emit;
+        :mod:`innerwork.search` and :mod:`innerwork.analytics` query the
+        store directly on each request rather than maintaining an
+        invalidation-driven cache, so no subscribers exist today. The
+        hook is retained as a forward-compatible extension point.
+
         Exceptions raised by the hook are swallowed to keep writes safe.
         """
 

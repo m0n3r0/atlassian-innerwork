@@ -890,15 +890,14 @@ def create_domain_router(store: DomainStore) -> APIRouter:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
-        except WorkItemNotFoundError:
+        except (WorkItemNotFoundError, PageNotFoundError):
+            # Collapse missing anchor onto the same 400 surface as
+            # "anchor not readable" so callers cannot probe for the
+            # existence of restricted IDs. Mirrors the analytics
+            # endpoints' single-status policy.
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="anchor work item not found",
-            ) from None
-        except PageNotFoundError:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="anchor page not found",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="anchor is not readable",
             ) from None
         return bundle.to_dict()
 
