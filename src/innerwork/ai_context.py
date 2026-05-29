@@ -19,7 +19,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .permissions import AnonymousPrincipal, Principal, can_read
+from .permissions import Principal, can_read
 from .search import SearchQueryError, search_domain, tokenize
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
@@ -115,7 +115,7 @@ def _approx_tokens(payload: Mapping[str, object]) -> int:
 # --------------------------------------------------------- candidate gather
 
 def _entry_for_work_item(
-    store: "DomainStore",
+    store: DomainStore,
     work_item_id: str,
     *,
     reason: str,
@@ -138,7 +138,7 @@ def _entry_for_work_item(
 
 
 def _entry_for_page(
-    store: "DomainStore",
+    store: DomainStore,
     page_id: str,
     *,
     reason: str,
@@ -227,7 +227,7 @@ def _entry_for_link(link, *, reason: str) -> ContextEntry:
     )
 
 
-def _expand_work_item(store: "DomainStore", work_item_id: str) -> Iterable[ContextEntry]:
+def _expand_work_item(store: DomainStore, work_item_id: str) -> Iterable[ContextEntry]:
     """Yield comments, transitions, and linked pages for a work item."""
 
     for comment in store.list_work_item_comments(work_item_id):
@@ -254,7 +254,7 @@ def _expand_work_item(store: "DomainStore", work_item_id: str) -> Iterable[Conte
         )
 
 
-def _expand_page(store: "DomainStore", page_id: str) -> Iterable[ContextEntry]:
+def _expand_page(store: DomainStore, page_id: str) -> Iterable[ContextEntry]:
     """Yield comments and linked work items for a page."""
 
     for comment in store.list_page_comments(page_id):
@@ -296,7 +296,7 @@ def _validate_max_items(max_items: int) -> int:
 
 
 def build_ai_context(
-    store: "DomainStore",
+    store: DomainStore,
     *,
     query: str | None = None,
     anchor_kind: str | None = None,

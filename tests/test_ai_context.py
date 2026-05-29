@@ -7,11 +7,10 @@ from pathlib import Path
 import pytest
 
 from innerwork.ai_context import (
-    AIContextError,
     CONTEXT_KINDS,
     DEFAULT_TOKEN_BUDGET,
+    AIContextError,
     ContextBundle,
-    ContextEntry,
     build_ai_context,
 )
 from innerwork.domain_store import DomainStore
@@ -158,7 +157,10 @@ def test_anchor_work_item_expands_to_comments_links_pages(tmp_path: Path):
     store = _store(tmp_path)
     _seed(store)
     bundle = build_ai_context(store, anchor_kind="work_item", anchor_id="wa")
-    by_kind = {e.kind: [x.entity_id for x in bundle.entries if x.kind == e.kind] for e in bundle.entries}
+    by_kind = {
+        e.kind: [x.entity_id for x in bundle.entries if x.kind == e.kind]
+        for e in bundle.entries
+    }
     assert "wa" in by_kind["work_item"]
     assert "ca" in by_kind.get("comment", [])
     assert any(e.kind == "transition" for e in bundle.entries)

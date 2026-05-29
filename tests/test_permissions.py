@@ -5,16 +5,15 @@ from __future__ import annotations
 import pytest
 
 from innerwork.permissions import (
-    AnonymousPrincipal,
     DEFAULT_VISIBILITY,
-    Principal,
     VISIBILITIES,
+    AnonymousPrincipal,
+    Principal,
     can_read,
     normalize_members,
     parse_principal_header,
     validate_visibility,
 )
-
 
 # ----------------------------------------------------------------- constants
 

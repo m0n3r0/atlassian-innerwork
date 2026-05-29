@@ -49,10 +49,10 @@ def _seed(store: DomainStore):
         members=("alice", "sec"),
     )
     # Work items: pp has 2 (1 todo, 1 done), pi has 1 in_progress, pr has 1 todo.
-    w_pp_a = store.create_work_item(
+    store.create_work_item(
         work_item_id="wa", project_id="pp", title="A", description="", assignee="eml"
     )
-    w_pp_b = store.create_work_item(
+    store.create_work_item(
         work_item_id="wb", project_id="pp", title="B", description="", assignee="eml"
     )
     store.create_work_item(

@@ -36,24 +36,18 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from .domain import WORKFLOW_STATES, InvalidTransitionError, default_workflow
 from .ai_context import (
-    AIContextError,
     DEFAULT_TOKEN_BUDGET,
+    AIContextError,
     build_ai_context,
 )
-from .search import (
-    SEARCHABLE_KINDS,
-    SearchQueryError,
-    search_domain,
-)
-from .permissions import parse_principal_header
 from .analytics import (
     AnalyticsError,
     domain_rollup,
     project_rollup,
     space_rollup,
 )
+from .domain import WORKFLOW_STATES, InvalidTransitionError, default_workflow
 from .domain_store import (
     CommentNotFoundError,
     DomainStore,
@@ -67,6 +61,12 @@ from .domain_store import (
     WorkItemNotFoundError,
 )
 from .knowledge import LINK_KINDS
+from .permissions import parse_principal_header
+from .search import (
+    SEARCHABLE_KINDS,
+    SearchQueryError,
+    search_domain,
+)
 
 # ----------------------------------------------------------------- pydantic IO
 
@@ -818,7 +818,10 @@ def create_domain_router(store: DomainStore) -> APIRouter:
     @router.get("/search")
     def search(
         q: str = Query(min_length=1, max_length=200),
-        kinds: str | None = Query(default=None, description="comma-separated subset of work_item,page,comment"),
+        kinds: str | None = Query(
+            default=None,
+            description="comma-separated subset of work_item,page,comment",
+        ),
         limit: int = Query(default=20, ge=1, le=100),
         project_id: str | None = Query(default=None),
         space_id: str | None = Query(default=None),

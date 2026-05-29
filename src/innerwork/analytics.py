@@ -136,7 +136,7 @@ def _empty_state_counter() -> dict[str, int]:
 
 
 def project_rollup(
-    store: "DomainStore",
+    store: DomainStore,
     project_id: str,
     *,
     principal: Principal | None = None,
@@ -174,7 +174,7 @@ def project_rollup(
 
 
 def space_rollup(
-    store: "DomainStore",
+    store: DomainStore,
     space_id: str,
     *,
     principal: Principal | None = None,
@@ -207,7 +207,7 @@ def space_rollup(
 
 
 def domain_rollup(
-    store: "DomainStore",
+    store: DomainStore,
     *,
     principal: Principal | None = None,
 ) -> DomainRollup:

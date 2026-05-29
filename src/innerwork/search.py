@@ -22,7 +22,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .permissions import AnonymousPrincipal, Principal, can_read
+from .permissions import Principal, can_read
 
 if TYPE_CHECKING:  # pragma: no cover — typing only
     from .domain_store import DomainStore
@@ -206,7 +206,7 @@ def _score(title: str, body: str, query_tokens: tuple[str, ...]) -> tuple[int, l
 
 
 def search_domain(
-    store: "DomainStore",
+    store: DomainStore,
     *,
     query: str,
     kinds: Iterable[str] | None = None,
