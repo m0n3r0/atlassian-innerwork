@@ -15,6 +15,7 @@ import sqlite3
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .comments import (
     PageComment,
@@ -103,8 +104,48 @@ class DomainStore:
     ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Phase 7: optional append-only audit sink. When None, no audit rows
+        # are emitted (preserves phase 5/6 behavior). Callers set via
+        # ``store.audit_sink = SqliteAuditSink(...)`` after construction.
+        self.audit_sink: Any = None
+        self.audit_actor_kind: str = "system"
         self._on_change = on_change
         self._initialize()
+
+    def _audit(
+        self,
+        *,
+        surface: str,
+        actor: str,
+        entity_kind: str,
+        entity_id: str,
+        action: str,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit an audit event if a sink is wired; otherwise no-op.
+
+        Imported lazily to keep ``audit`` from being a hard dependency for
+        consumers that don't enable trust hardening (phase 5/6 callers).
+        """
+
+        if self.audit_sink is None:
+            return
+        from .audit import make_event  # local import keeps cold-path cost out
+
+        event = make_event(
+            actor=actor,
+            actor_kind=self.audit_actor_kind,  # type: ignore[arg-type]
+            surface=surface,
+            entity_kind=entity_kind,
+            entity_id=entity_id,
+            action=action,
+            before=before,
+            after=after,
+            metadata=metadata,
+        )
+        self.audit_sink.record(event)
 
     # ------------------------------------------------------------------ change hook
     def set_change_hook(
@@ -402,6 +443,20 @@ class DomainStore:
             occurred_at=timestamp,
             reason=reason_clean,
         )
+        self._audit(
+            surface="jira_workflow",
+            actor=actor_clean,
+            entity_kind="WorkItem",
+            entity_id=item.work_item_id,
+            action="transition",
+            before={"state": item.state},
+            after={"state": to_state},
+            metadata={
+                "transition_id": transition_id,
+                "occurred_at": timestamp,
+                "reason": reason_clean,
+            },
+        )
         return new_item, transition
 
     def list_transitions(self, work_item_id: str) -> tuple[Transition, ...]:
@@ -560,6 +615,16 @@ class DomainStore:
             author=author_clean,
             created_at=timestamp,
         )
+        self._audit(
+            surface="confluence_page",
+            actor=author_clean,
+            entity_kind="Page",
+            entity_id=page_id,
+            action="create",
+            before=None,
+            after={"version_number": 1, "title": title.strip()},
+            metadata={"space_id": space_id, "version_id": version_id},
+        )
         return page, version
 
     def update_page(
@@ -613,6 +678,16 @@ class DomainStore:
             body=body,
             author=author_clean,
             created_at=timestamp,
+        )
+        self._audit(
+            surface="confluence_page",
+            actor=author_clean,
+            entity_kind="Page",
+            entity_id=page_id,
+            action="update",
+            before={"version_number": page.current_version},
+            after={"version_number": new_version_number, "title": title.strip()},
+            metadata={"version_id": version_id},
         )
         return new_page, version
 
