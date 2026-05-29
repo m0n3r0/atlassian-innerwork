@@ -20,6 +20,7 @@ These document the currently implemented MVP slices under `/v1/`.
 - `knowledge-graph-domain.md` — spaces, pages, immutable page versions, cross-graph WorkItem ↔ Page links (Phase B slice 2).
 - `comments-and-idempotency.md` — work-item / page comments and the `X-Idempotency-Key` contract on all `/v1/` mutations (Phase B slice 3).
 - `collaboration.md` — Phase F slice: `@handle` mentions, in-process notification dispatch (quiet hours + token-bucket rate limit), and deterministic JSON import/export round-trip.
+- `phase-6.md` — Phase 6: cross-graph search, AI-context bundling, deterministic analytics rollups, and the visibility/permission model behind `X-Innerwork-Principal`.
 - `production-grade-roadmap.md` — phased roadmap from PoC to production.
 
 ## Archive
