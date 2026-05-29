@@ -10,6 +10,7 @@ from typing import Any
 
 import yaml
 
+from .analytics import domain_rollup
 from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
 from .control_plane import ControlPlane
@@ -19,6 +20,13 @@ from .domain_store import (
     DuplicateProjectKeyError,
     ProjectNotFoundError,
     WorkItemNotFoundError,
+)
+from .migrators import build_synthetic_fixture, load_synthetic_fixture
+from .portability import (
+    DomainImportError,
+    export_domain_json,
+    import_domain,
+    import_domain_json,
 )
 from .serialization import (
     operation_result_to_dict,
@@ -101,6 +109,47 @@ def build_parser() -> argparse.ArgumentParser:
     work_item_transition.add_argument("--actor", required=True)
     work_item_transition.add_argument("--reason", default="")
 
+    # ----- portability / migration / metrics (Phase 10) ---------------------
+    export_cmd = subcommands.add_parser(
+        "export",
+        help="Export the entire work-graph domain as a portable JSON envelope",
+    )
+    _add_db_arg(export_cmd)
+    export_cmd.add_argument(
+        "--out",
+        type=Path,
+        help="Write JSON to this path instead of stdout",
+    )
+
+    import_cmd = subcommands.add_parser(
+        "import",
+        help="Import a portable JSON envelope into a fresh domain store",
+    )
+    _add_db_arg(import_cmd)
+    import_cmd.add_argument(
+        "input",
+        type=Path,
+        help="Path to a JSON envelope produced by `innerwork export`",
+    )
+
+    migrate_cmd = subcommands.add_parser(
+        "migrate",
+        help="Run a bundled migration source (Phase 10: synthetic fixture only)",
+    )
+    _add_db_arg(migrate_cmd)
+    migrate_cmd.add_argument(
+        "--source",
+        choices=("synthetic",),
+        default="synthetic",
+        help="Migration source — only `synthetic` ships in Phase 10",
+    )
+
+    metrics_cmd = subcommands.add_parser(
+        "metrics",
+        help="Print the whole-domain analytics rollup as JSON",
+    )
+    _add_db_arg(metrics_cmd)
+
     return parser
 
 
@@ -140,6 +189,10 @@ def main(argv: list[str] | None = None) -> int:
         "work-items",
         "work-item-create",
         "work-item-transition",
+        "export",
+        "import",
+        "migrate",
+        "metrics",
     }:
         return _domain_dispatch(args)
     raise AssertionError(f"unhandled command: {args.command}")
@@ -269,7 +322,55 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
             return 1
         _print_json({"work_item": item.to_dict(), "transition": transition.to_dict()})
         return 0
+    if args.command == "export":
+        payload = export_domain_json(store, indent=2)
+        out_path: Path | None = getattr(args, "out", None)
+        if out_path is not None:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(payload + "\n", encoding="utf-8")
+            return 0
+        sys.stdout.write(payload)
+        sys.stdout.write("\n")
+        return 0
+    if args.command == "import":
+        try:
+            raw = args.input.read_text(encoding="utf-8")
+        except OSError as exc:
+            sys.stderr.write(f"error: cannot read {args.input}: {exc}\n")
+            return 2
+        try:
+            counts = import_domain_json(store, raw)
+        except DomainImportError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(2) from exc
+        _print_json({"imported": counts})
+        return 0
+    if args.command == "migrate":
+        if args.source != "synthetic":  # pragma: no cover — argparse guards this
+            sys.stderr.write(f"error: unsupported migration source: {args.source}\n")
+            return 2
+        payload = (
+            load_synthetic_fixture()
+            if _synthetic_fixture_on_disk()
+            else build_synthetic_fixture()
+        )
+        try:
+            counts = import_domain(store, payload)
+        except DomainImportError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(2) from exc
+        _print_json({"source": args.source, "imported": counts})
+        return 0
+    if args.command == "metrics":
+        _print_json(domain_rollup(store).to_dict())
+        return 0
     raise AssertionError(f"unhandled domain command: {args.command}")
+
+
+def _synthetic_fixture_on_disk() -> bool:
+    from .migrators import SYNTHETIC_FIXTURE_PATH
+
+    return SYNTHETIC_FIXTURE_PATH.is_file()
 
 
 def _print_json(payload: dict[str, Any]) -> None:
