@@ -121,13 +121,19 @@ def _validate_optional_text(text: str | None, *, field_name: str, max_length: in
 
 @dataclass(frozen=True)
 class Project:
-    """A clean-room work-graph project. Owns a unique uppercase ``key``."""
+    """A clean-room work-graph project. Owns a unique uppercase ``key``.
+
+    Phase 6 added ``visibility`` + ``members`` for the read-permission gate.
+    Both have safe defaults so older call sites continue to compile.
+    """
 
     project_id: str
     key: str
     name: str
     owner: str
     created_at: str
+    visibility: str = "internal"
+    members: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         validate_project_key(self.key)
@@ -135,14 +141,24 @@ class Project:
         _validate_non_empty(self.owner, field_name="owner")
         _validate_non_empty(self.project_id, field_name="project_id")
         _validate_non_empty(self.created_at, field_name="created_at")
+        # Visibility / members validated by permissions.normalize_*; we
+        # accept them as already-validated tuples here.
+        if self.visibility not in ("public", "internal", "restricted"):
+            raise ValueError(
+                f"visibility must be one of public/internal/restricted, got {self.visibility!r}"
+            )
+        if not isinstance(self.members, tuple):
+            raise TypeError("Project.members must be a tuple")
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "project_id": self.project_id,
             "key": self.key,
             "name": self.name,
             "owner": self.owner,
             "created_at": self.created_at,
+            "visibility": self.visibility,
+            "members": list(self.members),
         }
 
 

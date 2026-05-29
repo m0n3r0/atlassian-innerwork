@@ -81,13 +81,18 @@ def _validate_non_empty(
 
 @dataclass(frozen=True)
 class Space:
-    """A knowledge-graph space. Owns a unique uppercase ``key``."""
+    """A knowledge-graph space. Owns a unique uppercase ``key``.
+
+    Phase 6 added ``visibility`` + ``members`` for the read-permission gate.
+    """
 
     space_id: str
     key: str
     name: str
     owner: str
     created_at: str
+    visibility: str = "internal"
+    members: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         validate_space_key(self.key)
@@ -95,14 +100,22 @@ class Space:
         _validate_non_empty(self.name, field_name="name")
         _validate_non_empty(self.owner, field_name="owner")
         _validate_non_empty(self.created_at, field_name="created_at")
+        if self.visibility not in ("public", "internal", "restricted"):
+            raise ValueError(
+                f"visibility must be one of public/internal/restricted, got {self.visibility!r}"
+            )
+        if not isinstance(self.members, tuple):
+            raise TypeError("Space.members must be a tuple")
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "space_id": self.space_id,
             "key": self.key,
             "name": self.name,
             "owner": self.owner,
             "created_at": self.created_at,
+            "visibility": self.visibility,
+            "members": list(self.members),
         }
 
 

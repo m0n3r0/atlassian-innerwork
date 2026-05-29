@@ -10,8 +10,9 @@ opens and closes a connection.
 
 from __future__ import annotations
 
+import json
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,8 +40,14 @@ from .knowledge import (
     validate_link_kind,
     validate_space_key,
 )
+from .permissions import (
+    DEFAULT_VISIBILITY,
+    Visibility,
+    normalize_members,
+    validate_visibility,
+)
 
-DOMAIN_SCHEMA_VERSION = 3
+DOMAIN_SCHEMA_VERSION = 4
 
 
 def utc_now_iso() -> str:
@@ -88,10 +95,58 @@ class CommentNotFoundError(KeyError):
 class DomainStore:
     """Persistence layer for projects, work items, and transitions."""
 
-    def __init__(self, path: Path | str) -> None:
+    def __init__(
+        self,
+        path: Path | str,
+        *,
+        on_change: Callable[[str, str, str], None] | None = None,
+    ) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._on_change = on_change
         self._initialize()
+
+    # ------------------------------------------------------------------ change hook
+    def set_change_hook(
+        self, hook: Callable[[str, str, str], None] | None
+    ) -> None:
+        """Install or clear a change-notification callback.
+
+        The hook is invoked as ``hook(entity, action, identifier)`` where:
+
+        * ``entity`` — ``"project"``, ``"space"``, ``"work_item"``, ``"page"``.
+        * ``action`` — ``"created"``, ``"updated"``, ``"deleted"``.
+        * ``identifier`` — primary key string.
+
+        Used by :mod:`innerwork.search` to invalidate its inverted index.
+        Exceptions raised by the hook are swallowed to keep writes safe.
+        """
+
+        self._on_change = hook
+
+    def _emit_change(self, entity: str, action: str, identifier: str) -> None:
+        if self._on_change is None:
+            return
+        try:
+            self._on_change(entity, action, identifier)
+        except Exception:  # pragma: no cover - defensive isolation
+            pass
+
+    @staticmethod
+    def _encode_members(members: Iterable[str] | None) -> str:
+        return json.dumps(list(normalize_members(members)))
+
+    @staticmethod
+    def _decode_members(raw: str | None) -> tuple[str, ...]:
+        if not raw:
+            return ()
+        try:
+            decoded = json.loads(raw)
+        except (TypeError, ValueError):
+            return ()
+        if not isinstance(decoded, list):
+            return ()
+        return tuple(str(m) for m in decoded if isinstance(m, str))
 
     # ------------------------------------------------------------------ projects
     def create_project(
@@ -102,8 +157,12 @@ class DomainStore:
         name: str,
         owner: str,
         created_at: str | None = None,
+        visibility: str = DEFAULT_VISIBILITY,
+        members: Iterable[str] = (),
     ) -> Project:
         validate_project_key(key)
+        tag: Visibility = validate_visibility(visibility)
+        member_tuple = normalize_members(members)
         timestamp = created_at or utc_now_iso()
         project = Project(
             project_id=project_id,
@@ -111,13 +170,18 @@ class DomainStore:
             name=name,
             owner=owner,
             created_at=timestamp,
+            visibility=tag,
+            members=member_tuple,
         )
         try:
             with self._connect() as connection:
                 connection.execute(
                     """
-                    INSERT INTO projects(project_id, key, name, owner, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO projects(
+                        project_id, key, name, owner, created_at,
+                        visibility, members
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         project.project_id,
@@ -125,41 +189,57 @@ class DomainStore:
                         project.name,
                         project.owner,
                         project.created_at,
+                        project.visibility,
+                        self._encode_members(project.members),
                     ),
                 )
         except sqlite3.IntegrityError as exc:
             if "projects.key" in str(exc) or "UNIQUE" in str(exc).upper():
                 raise DuplicateProjectKeyError(f"project key already exists: {key!r}") from exc
             raise
+        self._emit_change("project", "created", project.project_id)
         return project
+
+    def _row_to_project(self, row: tuple) -> Project:
+        return Project(
+            project_id=row[0],
+            key=row[1],
+            name=row[2],
+            owner=row[3],
+            created_at=row[4],
+            visibility=row[5] if len(row) > 5 and row[5] else DEFAULT_VISIBILITY,
+            members=self._decode_members(row[6] if len(row) > 6 else None),
+        )
 
     def get_project(self, project_id: str) -> Project:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT project_id, key, name, owner, created_at "
+                "SELECT project_id, key, name, owner, created_at, visibility, members "
                 "FROM projects WHERE project_id = ?",
                 (project_id,),
             ).fetchone()
         if row is None:
             raise ProjectNotFoundError(project_id)
-        return Project(*row)
+        return self._row_to_project(row)
 
     def get_project_by_key(self, key: str) -> Project:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT project_id, key, name, owner, created_at FROM projects WHERE key = ?",
+                "SELECT project_id, key, name, owner, created_at, visibility, members "
+                "FROM projects WHERE key = ?",
                 (key,),
             ).fetchone()
         if row is None:
             raise ProjectNotFoundError(key)
-        return Project(*row)
+        return self._row_to_project(row)
 
     def list_projects(self) -> tuple[Project, ...]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT project_id, key, name, owner, created_at FROM projects ORDER BY key"
+                "SELECT project_id, key, name, owner, created_at, visibility, members "
+                "FROM projects ORDER BY key"
             ).fetchall()
-        return tuple(Project(*row) for row in rows)
+        return tuple(self._row_to_project(row) for row in rows)
 
     # ----------------------------------------------------------------- work items
     def create_work_item(
@@ -351,8 +431,12 @@ class DomainStore:
         name: str,
         owner: str,
         created_at: str | None = None,
+        visibility: str = DEFAULT_VISIBILITY,
+        members: Iterable[str] = (),
     ) -> Space:
         validate_space_key(key)
+        tag: Visibility = validate_visibility(visibility)
+        member_tuple = normalize_members(members)
         timestamp = created_at or utc_now_iso()
         space = Space(
             space_id=space_id,
@@ -360,13 +444,17 @@ class DomainStore:
             name=name,
             owner=owner,
             created_at=timestamp,
+            visibility=tag,
+            members=member_tuple,
         )
         try:
             with self._connect() as connection:
                 connection.execute(
                     """
-                    INSERT INTO spaces(space_id, key, name, owner, created_at)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO spaces(
+                        space_id, key, name, owner, created_at, visibility, members
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         space.space_id,
@@ -374,30 +462,46 @@ class DomainStore:
                         space.name,
                         space.owner,
                         space.created_at,
+                        space.visibility,
+                        self._encode_members(space.members),
                     ),
                 )
         except sqlite3.IntegrityError as exc:
             if "spaces.key" in str(exc) or "UNIQUE" in str(exc).upper():
                 raise DuplicateSpaceKeyError(f"space key already exists: {key!r}") from exc
             raise
+        self._emit_change("space", "created", space.space_id)
         return space
+
+    def _row_to_space(self, row: tuple) -> Space:
+        return Space(
+            space_id=row[0],
+            key=row[1],
+            name=row[2],
+            owner=row[3],
+            created_at=row[4],
+            visibility=row[5] if len(row) > 5 and row[5] else DEFAULT_VISIBILITY,
+            members=self._decode_members(row[6] if len(row) > 6 else None),
+        )
 
     def get_space(self, space_id: str) -> Space:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT space_id, key, name, owner, created_at FROM spaces WHERE space_id = ?",
+                "SELECT space_id, key, name, owner, created_at, visibility, members "
+                "FROM spaces WHERE space_id = ?",
                 (space_id,),
             ).fetchone()
         if row is None:
             raise SpaceNotFoundError(space_id)
-        return Space(*row)
+        return self._row_to_space(row)
 
     def list_spaces(self) -> tuple[Space, ...]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT space_id, key, name, owner, created_at FROM spaces ORDER BY key"
+                "SELECT space_id, key, name, owner, created_at, visibility, members "
+                "FROM spaces ORDER BY key"
             ).fetchall()
-        return tuple(Space(*row) for row in rows)
+        return tuple(self._row_to_space(row) for row in rows)
 
     # ------------------------------------------------------------------- pages
     def create_page(
@@ -855,7 +959,9 @@ class DomainStore:
                     key TEXT NOT NULL UNIQUE,
                     name TEXT NOT NULL,
                     owner TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    visibility TEXT NOT NULL DEFAULT 'internal',
+                    members TEXT NOT NULL DEFAULT '[]'
                 )
                 """
             )
@@ -911,7 +1017,9 @@ class DomainStore:
                     key TEXT NOT NULL UNIQUE,
                     name TEXT NOT NULL,
                     owner TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    visibility TEXT NOT NULL DEFAULT 'internal',
+                    members TEXT NOT NULL DEFAULT '[]'
                 )
                 """
             )
@@ -1013,6 +1121,33 @@ class DomainStore:
                 )
                 """
             )
+            # Phase 6 additive migrations: backfill visibility/members on
+            # databases created under schema v3. SQLite has no
+            # ``IF NOT EXISTS`` on ``ADD COLUMN``, so probe ``PRAGMA``.
+            self._ensure_column(
+                connection,
+                table="projects",
+                column="visibility",
+                ddl="TEXT NOT NULL DEFAULT 'internal'",
+            )
+            self._ensure_column(
+                connection,
+                table="projects",
+                column="members",
+                ddl="TEXT NOT NULL DEFAULT '[]'",
+            )
+            self._ensure_column(
+                connection,
+                table="spaces",
+                column="visibility",
+                ddl="TEXT NOT NULL DEFAULT 'internal'",
+            )
+            self._ensure_column(
+                connection,
+                table="spaces",
+                column="members",
+                ddl="TEXT NOT NULL DEFAULT '[]'",
+            )
             connection.execute(
                 """
                 INSERT INTO meta(key, value) VALUES ('domain_schema_version', ?)
@@ -1020,6 +1155,21 @@ class DomainStore:
                 """,
                 (str(DOMAIN_SCHEMA_VERSION),),
             )
+
+    @staticmethod
+    def _ensure_column(
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        column: str,
+        ddl: str,
+    ) -> None:
+        existing = {
+            row[1]
+            for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in existing:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
     # ------------------------------------------------------------------ utilities
     @staticmethod

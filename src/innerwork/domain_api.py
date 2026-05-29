@@ -14,6 +14,13 @@ Endpoints
 * ``GET    /v1/work_items/{work_item_id}/transitions``      list transitions
 * ``POST   /v1/work_items/{work_item_id}/transitions``      transition work item
 
+Phase 6 additions
+-----------------
+
+* ``GET    /v1/search``                                     cross-graph search
+* ``GET    /v1/search/kinds``                               list searchable kinds
+* ``POST   /v1/ai_context``                                 build assistant context bundle
+
 This is the smallest surface that satisfies the Phase B exit criteria for
 the project + work-item half of the work-and-knowledge MVP. Space, Page,
 Comment, and Link land in follow-up slices.
@@ -30,6 +37,23 @@ from fastapi import APIRouter, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from .domain import WORKFLOW_STATES, InvalidTransitionError, default_workflow
+from .ai_context import (
+    AIContextError,
+    DEFAULT_TOKEN_BUDGET,
+    build_ai_context,
+)
+from .search import (
+    SEARCHABLE_KINDS,
+    SearchQueryError,
+    search_domain,
+)
+from .permissions import parse_principal_header
+from .analytics import (
+    AnalyticsError,
+    domain_rollup,
+    project_rollup,
+    space_rollup,
+)
 from .domain_store import (
     CommentNotFoundError,
     DomainStore,
@@ -111,6 +135,16 @@ class CommentCreate(BaseModel):
 
     author: str = Field(min_length=1, max_length=200)
     body: str = Field(min_length=1, max_length=10_000)
+
+
+class AIContextRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str | None = Field(default=None, max_length=200)
+    anchor_kind: str | None = Field(default=None, max_length=20)
+    anchor_id: str | None = Field(default=None, max_length=64)
+    token_budget: int = Field(default=DEFAULT_TOKEN_BUDGET, ge=200, le=32_000)
+    max_items: int = Field(default=20, ge=1, le=100)
 
 
 # ----------------------------------------------------------------- idempotency
@@ -779,6 +813,148 @@ def create_domain_router(store: DomainStore) -> APIRouter:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="comment not found",
             ) from None
+
+    # ---- search + AI context (Phase 6)
+    @router.get("/search")
+    def search(
+        q: str = Query(min_length=1, max_length=200),
+        kinds: str | None = Query(default=None, description="comma-separated subset of work_item,page,comment"),
+        limit: int = Query(default=20, ge=1, le=100),
+        project_id: str | None = Query(default=None),
+        space_id: str | None = Query(default=None),
+        x_innerwork_principal: str | None = Header(
+            default=None, alias="X-Innerwork-Principal"
+        ),
+    ) -> dict[str, Any]:
+        try:
+            principal = parse_principal_header(x_innerwork_principal)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        kinds_arg: tuple[str, ...] | None = None
+        if kinds is not None:
+            parts = tuple(p.strip() for p in kinds.split(",") if p.strip())
+            if not parts:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="kinds parameter must contain at least one kind",
+                )
+            kinds_arg = parts
+        try:
+            result = search_domain(
+                store,
+                query=q,
+                kinds=kinds_arg,
+                limit=limit,
+                project_id=project_id,
+                space_id=space_id,
+                principal=principal,
+            )
+        except SearchQueryError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        return result.to_dict()
+
+    @router.get("/search/kinds")
+    def search_kinds() -> dict[str, Any]:
+        return {"kinds": list(SEARCHABLE_KINDS)}
+
+    @router.post("/ai_context")
+    def ai_context(
+        payload: AIContextRequest,
+        x_innerwork_principal: str | None = Header(
+            default=None, alias="X-Innerwork-Principal"
+        ),
+    ) -> dict[str, Any]:
+        try:
+            principal = parse_principal_header(x_innerwork_principal)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        try:
+            bundle = build_ai_context(
+                store,
+                query=payload.query,
+                anchor_kind=payload.anchor_kind,
+                anchor_id=payload.anchor_id,
+                token_budget=payload.token_budget,
+                max_items=payload.max_items,
+                principal=principal,
+            )
+        except AIContextError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        except WorkItemNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="anchor work item not found",
+            ) from None
+        except PageNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="anchor page not found",
+            ) from None
+        return bundle.to_dict()
+
+    @router.get("/analytics/domain")
+    def analytics_domain(
+        x_innerwork_principal: str | None = Header(
+            default=None, alias="X-Innerwork-Principal"
+        ),
+    ) -> dict[str, Any]:
+        try:
+            principal = parse_principal_header(x_innerwork_principal)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        return domain_rollup(store, principal=principal).to_dict()
+
+    @router.get("/analytics/projects/{project_id}")
+    def analytics_project(
+        project_id: str,
+        x_innerwork_principal: str | None = Header(
+            default=None, alias="X-Innerwork-Principal"
+        ),
+    ) -> dict[str, Any]:
+        try:
+            principal = parse_principal_header(x_innerwork_principal)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        try:
+            return project_rollup(store, project_id, principal=principal).to_dict()
+        except AnalyticsError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
+
+    @router.get("/analytics/spaces/{space_id}")
+    def analytics_space(
+        space_id: str,
+        x_innerwork_principal: str | None = Header(
+            default=None, alias="X-Innerwork-Principal"
+        ),
+    ) -> dict[str, Any]:
+        try:
+            principal = parse_principal_header(x_innerwork_principal)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        try:
+            return space_rollup(store, space_id, principal=principal).to_dict()
+        except AnalyticsError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
+            ) from exc
 
     return router
 
