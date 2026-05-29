@@ -123,6 +123,35 @@ curl -sS http://127.0.0.1:8000/v2/control-plane/snapshot
 - [Threat model](docs/threat-model.md)
 - [Operations runbook](docs/operations-runbook.md)
 - [Architecture HTML walkthrough](docs/architecture.html)
+- [Launch plan](docs/launch-plan.md)
+- [Beta program](docs/beta-program.md)
+- [Migration guide](docs/migration-guide.md)
+- [Roadmap](docs/roadmap.md)
+- [Post-launch iteration](docs/post-launch-iteration.md)
+- [Metrics dashboard](docs/metrics-dashboard.md)
+
+## Beta
+
+Phase 10 opens a public beta of the CLI and FastAPI surface. To volunteer,
+open a `beta-signup` issue from the
+[beta signup template](.github/ISSUE_TEMPLATE/beta_signup.md) and read
+[`docs/beta-program.md`](docs/beta-program.md) first. The maintainers do not
+publish participant counts and the beta carries no commercial commitments.
+
+The Phase 10 CLI surface adds four work-graph subcommands:
+
+```bash
+innerwork export   --database-url sqlite:///./inner.db [--out export.json]
+innerwork import   --database-url sqlite:///./fresh.db export.json
+innerwork migrate  --database-url sqlite:///./fresh.db --source synthetic
+innerwork metrics  --database-url sqlite:///./inner.db
+```
+
+`export` / `import` use the portability envelope documented in
+[`docs/migration-guide.md`](docs/migration-guide.md). `migrate --source
+synthetic` populates a fresh store from the bundled synthetic fixture (the
+only `--source` shipped in Phase 10; no Jira/Confluence importer exists yet).
+`metrics` prints the whole-domain analytics rollup.
 
 ## Contributing
 

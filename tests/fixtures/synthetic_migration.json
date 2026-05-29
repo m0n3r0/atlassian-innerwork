@@ -1,0 +1,157 @@
+{
+  "format_version": 1,
+  "links": [
+    {
+      "created_at": "2024-01-06T12:05:00+00:00",
+      "created_by": "alice@example.test",
+      "kind": "documents",
+      "link_id": 1,
+      "page_id": "page-001",
+      "work_item_id": "wi-002"
+    }
+  ],
+  "page_comments": [
+    {
+      "author": "bob@example.test",
+      "body": "Added rollback section per review.",
+      "comment_id": 1,
+      "created_at": "2024-01-04T14:05:00+00:00",
+      "page_id": "page-001"
+    }
+  ],
+  "page_versions": [
+    {
+      "author": "alice@example.test",
+      "body": "Initial outline.",
+      "created_at": "2024-01-03T11:00:00+00:00",
+      "page_id": "page-001",
+      "title": "Launch checklist",
+      "version_id": 1,
+      "version_number": 1
+    },
+    {
+      "author": "alice@example.test",
+      "body": "Updated outline with rollback notes.",
+      "created_at": "2024-01-04T14:00:00+00:00",
+      "page_id": "page-001",
+      "title": "Launch checklist",
+      "version_id": 2,
+      "version_number": 2
+    }
+  ],
+  "pages": [
+    {
+      "created_at": "2024-01-03T11:00:00+00:00",
+      "current_version": 2,
+      "page_id": "page-001",
+      "space_id": "space-001",
+      "updated_at": "2024-01-04T14:00:00+00:00"
+    }
+  ],
+  "projects": [
+    {
+      "created_at": "2024-01-01T00:00:00+00:00",
+      "key": "PHX",
+      "name": "Phoenix",
+      "owner": "alice@example.test",
+      "project_id": "proj-001"
+    },
+    {
+      "created_at": "2024-01-02T00:00:00+00:00",
+      "key": "ORC",
+      "name": "Orchard",
+      "owner": "bob@example.test",
+      "project_id": "proj-002"
+    }
+  ],
+  "schema_version": 4,
+  "spaces": [
+    {
+      "created_at": "2024-01-02T00:00:00+00:00",
+      "key": "DOCS",
+      "name": "Docs",
+      "owner": "alice@example.test",
+      "space_id": "space-001"
+    }
+  ],
+  "transitions": [
+    {
+      "actor": "alice@example.test",
+      "from_state": "todo",
+      "occurred_at": "2024-01-03T09:30:00+00:00",
+      "reason": "",
+      "to_state": "in_progress",
+      "transition_id": 1,
+      "work_item_id": "wi-001"
+    },
+    {
+      "actor": "alice@example.test",
+      "from_state": "in_progress",
+      "occurred_at": "2024-01-04T17:30:00+00:00",
+      "reason": "bootstrap complete",
+      "to_state": "done",
+      "transition_id": 2,
+      "work_item_id": "wi-001"
+    },
+    {
+      "actor": "alice@example.test",
+      "from_state": "todo",
+      "occurred_at": "2024-01-06T12:00:00+00:00",
+      "reason": "",
+      "to_state": "in_progress",
+      "transition_id": 3,
+      "work_item_id": "wi-002"
+    }
+  ],
+  "work_item_comments": [
+    {
+      "author": "bob@example.test",
+      "body": "Nice \u2014 green across the board.",
+      "comment_id": 1,
+      "created_at": "2024-01-04T17:35:00+00:00",
+      "work_item_id": "wi-001"
+    },
+    {
+      "author": "alice@example.test",
+      "body": "Pulling in the rollback notes from page-001.",
+      "comment_id": 2,
+      "created_at": "2024-01-06T12:10:00+00:00",
+      "work_item_id": "wi-002"
+    }
+  ],
+  "work_items": [
+    {
+      "assignee": "alice@example.test",
+      "created_at": "2024-01-03T09:00:00+00:00",
+      "description": "Stand up the initial Phoenix surface.",
+      "key": "PHX-1",
+      "project_id": "proj-001",
+      "state": "done",
+      "title": "Bootstrap project",
+      "updated_at": "2024-01-04T17:30:00+00:00",
+      "work_item_id": "wi-001"
+    },
+    {
+      "assignee": "alice@example.test",
+      "created_at": "2024-01-05T10:00:00+00:00",
+      "description": "Synthetic \u2014 used for migration round-trip tests.",
+      "key": "PHX-2",
+      "project_id": "proj-001",
+      "state": "in_progress",
+      "title": "Draft launch checklist",
+      "updated_at": "2024-01-06T12:00:00+00:00",
+      "work_item_id": "wi-002"
+    },
+    {
+      "assignee": "",
+      "created_at": "2024-01-07T08:15:00+00:00",
+      "description": "",
+      "key": "ORC-1",
+      "project_id": "proj-002",
+      "state": "todo",
+      "title": "Stub the orchard surface",
+      "updated_at": "2024-01-07T08:15:00+00:00",
+      "work_item_id": "wi-003"
+    }
+  ]
+}
