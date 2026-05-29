@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, Response, status
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .broker import EdgeBroker
@@ -15,6 +16,12 @@ from .control_plane import ControlPlane
 from .domain_api import create_domain_router
 from .domain_store import DomainStore
 from .model import EDGE_POLICY_PROFILES
+from .observability import (
+    configure_json_logging,
+    current_request_id,
+    new_request_id,
+    registry,
+)
 from .serialization import (
     operation_result_to_dict,
     operation_to_dict,
@@ -109,6 +116,47 @@ def create_app(
     state = AppState(state_path=resolved_state_path, database_url=resolved_database_url)
     app.include_router(create_domain_router(state.domain_store))
 
+    configure_json_logging()
+
+    @app.middleware("http")
+    async def _observability_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        """Bind request id, emit JSON access log, record latency + counters."""
+        incoming = request.headers.get("x-request-id")
+        rid = incoming if incoming and 0 < len(incoming) <= 128 else new_request_id()
+        # Re-bind in this context regardless so contextvar is set.
+        from .observability import _request_id_var
+
+        token = _request_id_var.set(rid)
+        start = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            response.headers["x-request-id"] = rid
+            return response
+        except Exception:
+            registry.inc(
+                "http_request_errors_total",
+                labels={"endpoint": _route_label(request), "reason": "exception"},
+            )
+            raise
+        finally:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            endpoint = _route_label(request)
+            labels = {"endpoint": endpoint, "method": request.method, "status": str(status_code)}
+            registry.inc("http_requests_total", labels=labels)
+            if status_code >= 500:
+                registry.inc(
+                    "http_request_errors_total",
+                    labels={"endpoint": endpoint, "reason": f"status_{status_code}"},
+                )
+            registry.observe(
+                "http_request_duration_ms",
+                elapsed_ms,
+                labels={"endpoint": endpoint, "method": request.method},
+            )
+            _request_id_var.reset(token)
+
     @app.get("/", include_in_schema=False)
     def home() -> HTMLResponse:
         return HTMLResponse(_home_html())
@@ -120,6 +168,28 @@ def create_app(
             "service_count": len(state.broker.list_services()),
             "snapshot_version": ControlPlane(state.broker).snapshot().version,
         }
+
+    @app.get("/metrics", tags=["system"], include_in_schema=False)
+    def metrics() -> PlainTextResponse:
+        """Render the in-process metrics registry as Prometheus text.
+
+        See docs/observability.md for the rationale behind shipping a
+        stdlib-only registry instead of pulling in prometheus_client.
+        """
+        return PlainTextResponse(
+            registry.render(),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
+    @app.get("/v1/system/request-id", tags=["system"], include_in_schema=False)
+    def request_id_echo() -> dict[str, str | None]:
+        """Echo the request id bound to the current context.
+
+        Useful for debugging the observability middleware and for clients
+        that want to confirm an upstream-provided ``x-request-id`` header
+        is being honored.
+        """
+        return {"request_id": current_request_id()}
 
     @app.get("/v2/catalog", tags=["broker"])
     def catalog() -> dict[str, Any]:
@@ -217,6 +287,21 @@ def create_app(
         return snapshot_to_dict(ControlPlane(state.broker).snapshot())
 
     return app
+
+
+def _route_label(request: Request) -> str:
+    """Return a low-cardinality label for the matched route.
+
+    Falls back to the raw path when no route matched (404). We deliberately
+    use ``request.scope["route"].path`` instead of ``request.url.path`` so
+    parameterized routes (e.g. ``/v1/projects/{project_id}``) do not blow
+    up label cardinality.
+    """
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str) and path:
+        return path
+    return request.url.path or "unknown"
 
 
 def _sqlite_path_from_url(database_url: str) -> Path:
