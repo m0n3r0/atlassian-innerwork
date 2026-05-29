@@ -131,3 +131,13 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The short version:
 1. Add or update tests first for behavior changes.
 2. Run `uv run pytest -q`, `uv run ruff check .`, and `uv run pyright`.
 3. Keep public-source grounding explicit; do not add claims about private Atlassian internals.
+
+## Community
+
+- **Code of Conduct** — [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1).
+- **Governance** — [`GOVERNANCE.md`](GOVERNANCE.md). Minimalist BDFL model; lazy consensus on PRs.
+- **Maintainers** — [`MAINTAINERS.md`](MAINTAINERS.md). Self-nomination only.
+- **Security** — [`SECURITY.md`](SECURITY.md). Use **GitHub private vulnerability reporting** for security bugs; do not open a public issue or PR.
+- **Contributor deep-dive** — [`docs/contributor-guide.md`](docs/contributor-guide.md).
+- **Changelog** — [`CHANGELOG.md`](CHANGELOG.md).
+- **License** — [`LICENSE`](LICENSE) (MIT).
