@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Python
+        run: uv python install 3.11
+      - name: Install dependencies
+        run: uv sync --dev --frozen
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type check
+        run: uv run pyright
+      - name: Validate OpenAPI contract
+        run: uv run python scripts/validate_openapi_contract.py
+      - name: Test
+        run: uv run pytest -q
+      - name: Rollback drill
+        run: uv run python scripts/rollback_drill.py --workdir "${RUNNER_TEMP}/innerwork-rollback-drill"
+      - name: Build wheel + sdist
+        run: uv build
+      - name: Generate changelog
+        id: changelog
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          prev=$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || echo "")
+          {
+            echo "# ${tag}"
+            echo
+            if [ -n "${prev}" ]; then
+              echo "## Changes since ${prev}"
+              echo
+              git log --pretty='* %h %s' "${prev}..${tag}"
+            else
+              echo "## Changes"
+              echo
+              git log --pretty='* %h %s' "${tag}"
+            fi
+          } > CHANGELOG_RELEASE.md
+          echo "path=CHANGELOG_RELEASE.md" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: ${{ steps.changelog.outputs.path }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+          fail_on_unmatched_files: true
