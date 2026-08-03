@@ -20,6 +20,12 @@ All four audits ran against `main @ 328561d` and independently recorded
 **332/332 tests passing**. No code was changed by any audit; the suite is
 untouched.
 
+**Severity distribution: 38 consolidated findings → 0 CRITICAL / 4 HIGH /
+14 MED / 20 LOW.** The four HIGHs are C1 (portability drops
+`visibility`/`members`), C21 (migration-guide documents a nonexistent CLI
+surface), C22 (false metrics/telemetry claims), and C32 (`ai_context.py`
+security-adjacent paths with zero coverage).
+
 ## Cross-audit reconciliation
 
 ### Contradictions: none found
