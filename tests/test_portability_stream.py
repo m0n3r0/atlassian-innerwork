@@ -7,8 +7,8 @@ audit_actor_kind=...), indent=..., sort_keys=False)`` for the same store
 and settings. Rows are fetched via ``fetchmany(batch_size)`` — never
 ``fetchall`` (the ban test enforces this).
 
-The CLI surface is unchanged (no ``--stream`` flag): ``export`` always
-streams, writes ``--out`` atomically via a temp file + ``os.replace``,
+The CLI surface adds one flag (``--progress``, stderr-only reporting): ``export``
+always streams, writes ``--out`` atomically via a temp file + ``os.replace``,
 and appends the trailing newline after the call.
 """
 
@@ -20,6 +20,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import tracemalloc
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -604,3 +605,241 @@ def test_cli_export_out_atomic_on_error(tmp_path: Path) -> None:
     assert export_path.read_text(encoding="utf-8") == "SENTINEL"  # never clobbered
     litter = [p for p in tmp_path.iterdir() if ".tmp" in p.name]
     assert litter == []  # temp file removed on every failure path
+
+
+# ------------------------------------------------------------- progress
+
+
+def test_stream_progress_callback_cadence(tmp_path: Path) -> None:
+    """``progress`` is invoked at start (0), after batches, and with final counts.
+
+    Arguments are only ``str`` collection names and ``int`` counts — never
+    row content (SEC gate, scoping doc §3.1).
+    """
+
+    store = _store(tmp_path)
+    _seed_many(store, 600)  # work_items > batch_size → multiple batches
+    calls: list[tuple[str, int]] = []
+    out = io.StringIO()
+    export_domain_json_stream(
+        store,
+        out,
+        batch_size=500,
+        progress=lambda c, n: calls.append((c, n)),
+    )
+
+    for collection, cumulative in calls:
+        assert isinstance(collection, str)
+        assert isinstance(cumulative, int)
+        assert cumulative >= 0
+
+    payload = export_domain(store)
+    expected = {k: len(v) for k, v in payload.items() if isinstance(v, list)}
+    for collection, total in expected.items():
+        coll = [n for c, n in calls if c == collection]
+        assert coll[0] == 0, f"{collection} must report a start of 0"
+        assert coll[-1] == total, f"{collection} final report must be {total}"
+        assert coll == sorted(coll), f"{collection} reports must be non-decreasing"
+
+    # per-batch: an intermediate work_items report strictly between 0 and 600
+    wi = [n for c, n in calls if c == "work_items"]
+    assert any(0 < n < 600 for n in wi), f"expected per-batch reports, got {wi}"
+
+
+def test_cli_export_progress_stderr(tmp_path: Path) -> None:
+    """``export --progress`` reports to stderr without touching stdout JSON."""
+
+    db = tmp_path / "src.db"
+    store = DomainStore(db)
+    _seed(store)
+    url = f"sqlite:///{db}"
+    r = _run_cli("export", "--database-url", url, "--progress")
+    assert r.returncode == 0, r.stderr
+    # stdout is still the exact envelope — progress never interleaves.
+    assert r.stdout == _reference(store) + "\n"
+    # stderr carries progress lines with collection names + counts only.
+    lines = [ln for ln in r.stderr.splitlines() if ln.startswith("export: ")]
+    assert lines, "expected export: progress lines on stderr"
+    assert any("done (" in ln for ln in lines)
+    assert any("rows across" in ln for ln in lines)
+    # no row content leaks into progress lines (unicode seed content)
+    for ln in lines:
+        assert "Ünïcødé" not in ln
+        assert "中文" not in ln
+        assert "🚀" not in ln
+        assert "tïtle" not in ln
+    # final summary line shape: export: done (N rows across M collections)
+    final = lines[-1]
+    assert final.startswith("export: done (")
+    assert "rows across" in final and final.endswith("collections)")
+
+
+def test_cli_export_help_documents_progress(tmp_path: Path) -> None:
+    """``--help`` documents ``--progress`` (acceptance criterion 5)."""
+
+    r = _run_cli("export", "--help")
+    assert r.returncode == 0, r.stderr
+    assert "--progress" in r.stdout
+
+
+def test_cli_export_progress_silent_without_flag(tmp_path: Path) -> None:
+    """Without ``--progress`` stderr stays silent on success (script-safe)."""
+
+    db = tmp_path / "src.db"
+    store = DomainStore(db)
+    _seed(store)
+    url = f"sqlite:///{db}"
+    r = _run_cli("export", "--database-url", url)
+    assert r.returncode == 0, r.stderr
+    assert r.stderr == ""
+    assert r.stdout == _reference(store) + "\n"
+
+
+def test_stream_progress_callback_cadence_audit_multibatch(tmp_path: Path) -> None:
+    """Audit collection progress fires at batch boundaries with >batch_size events."""
+
+    store = _store(tmp_path)
+    _seed(store)
+    sink = MemoryAuditSink()
+    for i in range(600):  # > batch_size → multiple audit progress reports
+        sink.record(
+            make_event(
+                event_id=f"bulk-{i}",
+                ts=1785778000.0 + i,
+                actor="bot",
+                actor_kind="service",
+                surface="mention",
+                entity_kind="Page",
+                entity_id="pg1",
+                action="dispatch",
+            )
+        )
+    store.audit_sink = sink
+
+    calls: list[tuple[str, int]] = []
+    out = io.StringIO()
+    export_domain_json_stream(
+        store,
+        out,
+        batch_size=500,
+        include_audit=True,
+        progress=lambda c, n: calls.append((c, n)),
+    )
+    audit = [n for c, n in calls if c == "audit"]
+    assert audit[0] == 0
+    assert audit[-1] == 600
+    assert 500 in audit  # batch-boundary report for the chunked audit rows
+
+
+# ------------------------------------------------- memory-bound measurement
+
+
+def _seed_large(store: DomainStore, n_work: int, n_versions: int) -> None:
+    """Bulk-seed ``n_work`` work items + ``n_versions`` page versions.
+
+    Raw SQL in one transaction (not the public API) so the 40k-row
+    tracemalloc workload seeds in well under a second. Bodies are ~200
+    chars, matching the scoping doc §3.3 measurement-plan workload.
+    """
+
+    with store._connect() as connection:
+        connection.execute(
+            "INSERT INTO projects(project_id, key, name, owner, created_at) "
+            "VALUES ('bulk', 'BULK', 'Bulk', 'eml', '2026-05-01T00:00:00Z')"
+        )
+        connection.executemany(
+            "INSERT INTO work_items("
+            "work_item_id, project_id, key, title, description, "
+            "state, assignee, created_at, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    f"w{i:05d}",
+                    "bulk",
+                    f"BULK-{i}",
+                    f"bulk item {i}",
+                    "x" * 200,
+                    "todo",
+                    "",
+                    "2026-05-02T00:00:00Z",
+                    "2026-05-02T00:00:00Z",
+                )
+                for i in range(n_work)
+            ],
+        )
+        connection.execute(
+            "INSERT INTO spaces(space_id, key, name, owner, created_at) "
+            "VALUES ('s1', 'DOCS', 'Docs', 'eml', '2026-05-01T00:00:00Z')"
+        )
+        connection.execute(
+            "INSERT INTO pages(page_id, space_id, current_version, created_at, updated_at) "
+            "VALUES ('pg1', 's1', 1, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z')"
+        )
+        connection.executemany(
+            "INSERT INTO page_versions("
+            "page_id, version_number, title, body, author, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "pg1",
+                    i + 1,
+                    f"v{i + 1}",
+                    "y" * 200,
+                    "eml",
+                    "2026-05-04T00:00:00Z",
+                )
+                for i in range(n_versions)
+            ],
+        )
+
+
+def test_stream_peak_memory_differential(tmp_path: Path) -> None:
+    """Measured memory claim: streamed peak < 25% of memory-resident peak.
+
+    Scoping doc §3.3/§6: 40k-row store (20k work items + 20k page
+    versions, ~200-char bodies). tracemalloc differential on the same
+    store and machine — never an absolute MB/GB figure. The streamed
+    export writes through a real file sink (the ``--out`` path), because
+    a StringIO would itself accumulate the whole envelope in memory.
+    """
+
+    store = _store(tmp_path)
+    _seed_large(store, 20_000, 20_000)
+
+    tracemalloc.start()
+    memory_payload = export_domain_json(store, indent=2)
+    _, memory_peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # Floor guard: the workload is genuinely large — the differential
+    # cannot pass trivially on a tiny store.
+    assert memory_peak >= 8 * 1024 * 1024, (
+        f"memory-resident peak {memory_peak} below the 8 MiB floor guard"
+    )
+
+    out_path = tmp_path / "stream.json"
+    tracemalloc.start()
+    with out_path.open("w", encoding="utf-8") as fh:
+        export_domain_json_stream(store, fh, indent=2)
+    _, stream_peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    assert stream_peak < memory_peak / 4, (
+        f"streamed peak {stream_peak} not < 25% of memory-resident peak {memory_peak}"
+    )
+    # the streamed artifact is still byte-identical at scale
+    assert out_path.read_text(encoding="utf-8") == memory_payload
+
+
+# ------------------------------------------------------- import edge cases
+
+
+def test_cli_import_unreadable_input_exit_2(tmp_path: Path) -> None:
+    """A missing/unreadable import input fails loudly with exit 2."""
+
+    db = tmp_path / "dst.db"
+    url = f"sqlite:///{db}"
+    missing = tmp_path / "does-not-exist.json"
+    r = _run_cli("import", "--database-url", url, str(missing))
+    assert r.returncode == 2
+    assert "cannot read" in r.stderr

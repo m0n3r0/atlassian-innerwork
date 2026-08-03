@@ -95,6 +95,17 @@ side-effect-conservative: they never mutate an already-populated store.
 > Caveat: a failed stdout export can leave a *partial* envelope on
 > stdout (there is no atomicity for pipes); treat stdout as authoritative
 > only when the exit code is 0.
+>
+> **Progress (`--progress`, post-phase-10).** `innerwork export --progress`
+> prints progress lines to stderr at collection boundaries, every 100,000
+> rows within a collection, and a final summary. Lines contain only
+> constant collection names and counts — never row content, audit fields,
+> or paths. Without the flag stderr stays silent on success, so scripts
+> are unaffected. Memory characteristics: the bound is documented as a
+> *target* (O(batch_size) additional memory) and *measured* by a
+> tracemalloc differential test (streamed peak ≤ 25% of the
+> memory-resident peak on the 40k-row workload, with a ≥ 8 MiB floor
+> guard) — no machine-independent MB/GB figure is claimed.
 
 ### 2.1 `innerwork export-domain`
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any, TextIO
 
 from .audit import AuditEvent, make_event
@@ -357,6 +357,7 @@ def export_domain_json_stream(
     batch_size: int = 500,
     include_audit: bool = False,
     audit_actor_kind: str = "system",
+    progress: Callable[[str, int], None] | None = None,
 ) -> dict[str, int]:
     """Write the portability envelope to ``out`` incrementally.
 
@@ -373,6 +374,11 @@ def export_domain_json_stream(
     written (a failed export records no ``portability_export`` event).
     Returns ``{collection: rows_written}`` — same shape as
     :func:`import_domain`'s return, ``audit`` included when requested.
+
+    ``progress(collection, cumulative_rows)`` (when given) is invoked at
+    each collection start with ``0``, after every batch with the running
+    count, and once more with the final count. It is never invoked with
+    row content — only constant collection names and integers.
     """
 
     if batch_size < 1:
@@ -401,22 +407,31 @@ def export_domain_json_stream(
     with store._connect() as connection:  # noqa: SLF001 — portability owns the schema
         for index, key in enumerate(collection_keys):
             last = index == len(collection_keys) - 1
+            if progress is not None:
+                progress(key, 0)  # collection start
             if indent is None:
                 out.write(f'"{key}": ')
             else:
                 out.write(f'\n{pad}"{key}": ')
             if key == "audit":
-                count = _write_stream_array(out, iter(audit_rows or ()), indent=indent, key_pad=pad)
+                count = _write_stream_array(
+                    out,
+                    _iter_progress_rows(audit_rows or (), batch_size, progress, key),
+                    indent=indent,
+                    key_pad=pad,
+                )
             else:
                 query, columns = _stream_collection_query(key)
                 cursor = connection.execute(query)
                 count = _write_stream_array(
                     out,
-                    _iter_batched_rows(cursor, columns, batch_size),
+                    _iter_batched_rows(cursor, columns, batch_size, progress, key),
                     indent=indent,
                     key_pad=pad,
                 )
             counts[key] = count
+            if progress is not None:
+                progress(key, count)  # final count for the collection
             if not last:
                 out.write(", " if indent is None else ",")
     out.write("}" if indent is None else "\n}")
@@ -442,14 +457,45 @@ def _iter_batched_rows(
     cursor: Any,
     columns: tuple[str, ...],
     batch_size: int,
+    progress: Callable[[str, int], None] | None = None,
+    collection: str = "",
 ) -> Iterator[dict[str, Any]]:
-    """Yield row dicts from ``cursor`` in bounded ``fetchmany`` batches."""
+    """Yield row dicts from ``cursor`` in bounded ``fetchmany`` batches.
+
+    When ``progress`` is given, reports ``progress(collection, running)``
+    after every batch (the running count of rows yielded so far).
+    """
+    running = 0
     while True:
         batch = cursor.fetchmany(batch_size)
         if not batch:
             return
+        running += len(batch)
         for raw in batch:
             yield dict(zip(columns, raw, strict=True))
+        if progress is not None:
+            progress(collection, running)
+
+
+def _iter_progress_rows(
+    rows: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    batch_size: int,
+    progress: Callable[[str, int], None] | None,
+    collection: str,
+) -> Iterator[dict[str, Any]]:
+    """Yield ``rows`` while reporting ``progress(collection, running)``.
+
+    The audit collection arrives pre-materialized from the sink, so this
+    chunks it into ``batch_size`` windows purely for progress reporting —
+    the sink's materializing ``query()`` is pre-existing behavior, not a
+    streaming claim (scoping doc §3.3).
+    """
+    running = 0
+    for row in rows:
+        running += 1
+        yield row
+        if progress is not None and running % batch_size == 0:
+            progress(collection, running)
 
 
 def _write_stream_array(
