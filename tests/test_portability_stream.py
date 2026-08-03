@@ -607,6 +607,47 @@ def test_cli_export_out_atomic_on_error(tmp_path: Path) -> None:
     assert litter == []  # temp file removed on every failure path
 
 
+def test_cli_export_out_atomic_on_mid_write_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An OSError *mid-write* (stream into the temp file fails) preserves the
+    existing target, removes the temp file, and exits 2 with a clear stderr.
+
+    ``test_cli_export_out_atomic_on_error`` covers the fail-before-write path
+    (missing audit sink); this test covers the disk-full-during-stream path,
+    where bytes have already reached the temp file. The sentinel must survive
+    and no ``*.tmp*`` litter may remain (scoping doc §2 atomic ``--out``).
+    """
+
+    import innerwork.cli as cli_module
+
+    db = tmp_path / "src.db"
+    store = DomainStore(db)
+    _seed(store)
+    url = f"sqlite:///{db}"
+    export_path = tmp_path / "export.json"
+    export_path.write_text("SENTINEL", encoding="utf-8")
+
+    def _mid_write_disk_full(store_arg: Any, out: Any, **kwargs: Any) -> dict[str, int]:
+        out.write('{"format_version": ')  # bytes already streamed to temp file
+        out.flush()
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(cli_module, "export_domain_json_stream", _mid_write_disk_full)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli_module.main(
+            ["export", "--database-url", url, "--out", str(export_path)]
+        )
+    assert excinfo.value.code == 2
+    captured = capsys.readouterr()
+    assert "simulated disk full" in captured.err
+    assert captured.out == ""  # nothing on stdout for --out failure
+    assert export_path.read_text(encoding="utf-8") == "SENTINEL"  # never clobbered
+    litter = [p for p in tmp_path.iterdir() if ".tmp" in p.name]
+    assert litter == []  # temp file removed on the mid-write failure path
+
+
 # ------------------------------------------------------------- progress
 
 
