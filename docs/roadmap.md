@@ -61,6 +61,13 @@ suite. They form the stable surface that the beta program exercises.
   targets are written atomically via a temp file + `os.replace`.
   Implemented in `src/innerwork/portability.py` / `src/innerwork/cli.py`;
   documented in `docs/migration-guide.md` §2/§6. Post-phase-10 addition.
+- Time-windowed metrics (`innerwork metrics --window-start/--window-end`)
+  — optional activity-over-window aggregations (`state_counts`,
+  `cycle_time_per_project`, `page_writes`, `contributors`) appended as an
+  additive top-level `"window"` object, computed over half-open `[start, end)`
+  UTC windows; no flags → byte-identical point-in-time output. Implemented
+  in `src/innerwork/analytics.py` / `src/innerwork/cli.py`; documented in
+  `docs/metrics-dashboard.md` §4. Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -76,8 +83,6 @@ fluid and may change as beta feedback arrives.
 
 - Tighten the operations runbook with explicit backup / restore /
   upgrade procedures.
-- Expand `innerwork metrics` output with optional time-windowed
-  aggregations (currently the rollup is point-in-time only).
 - Document a recommended Prometheus / log-scraping shape for operators
   who want to wire `innerwork` into existing observability stacks.
   No exporter ships in Phase 10.
