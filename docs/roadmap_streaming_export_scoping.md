@@ -1,7 +1,7 @@
 # Roadmap item: streaming-export — streaming export for very large stores — PM scoping
 
 **Status:** PM scoping (pre-implementation). Source: `docs/roadmap.md` → "Directional next" → Portability format (`slug=streaming-export`).
-**Parent:** post-launch backlog item; no phase number. Implementation task `t_streaming_export_impl` branches from `main` on `feat/streaming-export`.
+**Parent:** post-launch backlog item; no phase number. Implementation task `t_80d6c615` branches from `main` on `feat/streaming-export`.
 **Audience:** the implementation worker (atlassianeng). Read this end-to-end before touching files.
 
 ---
@@ -18,7 +18,7 @@ Verified against `main` at commit `5b1bc3d` on 2026-08-04. The audit-export-flag
 | Portability audit event | ✅ | `portability.py:262` (`_audit_portability`) | Fires after payload build (`export_domain_json`) and after import; records `counts` + effective `format_version` in metadata; no-op without a wired sink. |
 | CLI export | ⚠️ | `src/innerwork/cli.py:447` | `innerwork export [--database-url] [--out PATH] [--include-audit] [--audit-log PATH]`. Builds the full string via `export_domain_json(store, indent=2, include_audit=...)`, then `out_path.write_text(payload + "\n")` or `sys.stdout.write(payload + "\n")`. `DomainImportError` → stderr + exit 2. **No streaming anywhere.** |
 | CLI import | ✅ | `cli.py:465` | `innerwork import <input.json>` reads the whole file (`read_text`) and `json.loads` it — memory-resident by design. **Out of scope for this slice** (see §4). |
-| Round-trip gates | ✅ | `tests/test_portability.py` (15 tests), `tests/test_portability_audit.py` (28 tests), `tests/test_migration.py` (7 tests, CLI via `_run_cli` subprocess) | `test_round_trip_re_export_is_byte_identical` is the canonical gate; `test_portability_audit.py` covers the v2/audit paths incl. `test_round_trip_audit_no_loss_no_duplication`. These suites must stay green **unchanged** — the streaming writer must produce byte-identical output so every existing round-trip assertion holds for streamed files too. |
+| Round-trip gates | ✅ | `tests/test_portability.py` (15 tests), `tests/test_portability_audit.py` (32 tests), `tests/test_migration.py` (7 tests, CLI via `_run_cli` subprocess) | `test_round_trip_re_export_is_byte_identical` is the canonical gate; `test_portability_audit.py` covers the v2/audit paths incl. `test_round_trip_audit_no_loss_no_duplication`. These suites must stay green **unchanged** — the streaming writer must produce byte-identical output so every existing round-trip assertion holds for streamed files too. |
 | Streaming primitives | ❌ | n/a | No iterating writer, no `fetchmany` usage, no chunked export anywhere in the repo. The roadmap bullet (`docs/roadmap.md:86`) is unimplemented: "Consider streaming export for very large stores (the current shape is memory-resident; this has been acceptable through Phase 10)." |
 
 **Implication.** A contained, additive slice with **no wire-format change**: a new `export_domain_json_stream(store, out, ...)` writer that emits byte-identical JSON to today's `export_domain_json(...)` while bounding peak memory to O(batch_size × row size) instead of O(store size), plus a small CLI refactor of the `export` branch (`--out` becomes atomic temp+rename; stdout streams). The import side, the in-memory `export_domain`/`export_domain_json` API, the audit pipeline, and every existing test stay untouched.
@@ -55,17 +55,18 @@ Implementation worker MUST touch exactly the files in this table, in this order.
 
 ## §2 CLI surface (locked)
 
-No new flags. The command line is **identical** to today:
+One new optional flag (`--progress`); otherwise the command line is **identical** to today:
 
 ```
-innerwork export [--database-url sqlite:///...] [--out PATH] [--include-audit] [--audit-log PATH]
+innerwork export [--database-url sqlite:///...] [--out PATH] [--include-audit] [--audit-log PATH] [--progress]
 ```
 
-What changes is the mechanism and two observable behaviors:
+What changes is the mechanism and these observable behaviors:
 
 1. **Streaming.** The `export` branch calls `export_domain_json_stream(store, out, indent=2, include_audit=...)` instead of building `export_domain_json(...)` first. Output bytes are identical to today (`export_domain_json(store, indent=2, include_audit=...) + "\n"`); only the memory profile and write timing change.
 2. **Atomic `--out`.** With `--out PATH`: write to `PATH.parent / (PATH.name + f".tmp{os.getpid()}")` (parent dirs created as today), then `os.replace(tmp, PATH)` on success. On **any** failure the temp file is removed and the existing `PATH` (if any) is left untouched — a failed export never clobbers a previous good snapshot and never leaves a partial file at the target. Success/failure contract unchanged: exit 0 silent on success; `DomainImportError` (e.g. `--include-audit` without a sink) → stderr + exit 2, nothing written; other exceptions propagate exactly as they do today.
 3. **stdout.** Without `--out`, the writer streams directly to `sys.stdout`; the CLI appends the trailing `"\n"` after the call returns. Honest caveat, documented in §5: a mid-stream failure leaves **partial JSON on stdout** plus the error on stderr and a non-zero exit — stdout cannot be atomic. File exports are atomic; pipe exports are not. (An `include_audit`-without-sink error is detected **before** the first byte is written, so that specific failure still produces empty stdout, matching today.)
+4. **Progress reporting (`--progress`).** The roadmap item requires operators to see the export is alive on huge stores (acceptance criterion 5). `--progress` (store_true, the **only new flag**) prints progress lines to **stderr** at a documented cadence: one line at each collection start, then every 100 000 rows within a collection, then one line at each collection completion and one final line. Line shape: `export: work_items 100000 rows...` / `export: work_items done (N rows)` / `export: done (N rows across 10 collections)`. **Progress lines contain only the constant collection name and integers — never row content, never audit fields, never paths** (SEC gate). Without the flag, stderr stays silent on success (script-friendly). Progress always goes to stderr, so it never interleaves with the JSON on stdout or in a `--out` file.
 
 `--audit-log` / `INNERWORK_AUDIT_DB` wiring (`_wire_audit_sink`, `cli.py:368`) is unchanged. `_audit_portability` fires once, after the stream completes, with counts returned by the stream writer and the effective `format_version` — the same event shape and timing semantics as today (the event is emitted after the data is read either way).
 
@@ -84,13 +85,15 @@ def export_domain_json_stream(
     batch_size: int = 500,
     include_audit: bool = False,
     audit_actor_kind: str = "system",
+    progress: Callable[[str, int], None] | None = None,
 ) -> dict[str, int]:
 ```
 
 - `out` is a text stream (`io.StringIO`, an open file, `sys.stdout`). The function writes the envelope and **nothing else** — no trailing newline (the CLI appends `"\n"` exactly as it does today after `export_domain_json`).
 - Returns `{collection: rows_written}` for the 9 `_COLLECTION_ORDER` collections (plus `"audit"` when `include_audit=True`) — same shape as `import_domain`'s return. Used internally for `_audit_portability` counts and available to API callers.
 - Added to `__all__`.
-- Keyword-only params mirror `export_domain_json` exactly (`indent`, `include_audit`, `audit_actor_kind`) plus `batch_size`.
+- `progress(collection, cumulative_rows)` (new keyword param) is invoked at collection start (0), after **every** batch, and once more with the final count. The CLI throttles these calls into the §2 cadence (collection boundaries + every 100 000 rows + final); API callers get precise pacing. Never invoked with row content — only the constant collection name and integers.
+- Keyword-only params mirror `export_domain_json` exactly (`indent`, `include_audit`, `audit_actor_kind`) plus `batch_size` and `progress`.
 
 ### 3.2 The byte-identity invariant (THE gate)
 
@@ -109,6 +112,7 @@ export_domain_json_stream(store, out, ...)  ⟹  out.getvalue() == export_domain
 - `_rows` (the `fetchall` helper) is **not** used by the stream path.
 - The `audit` collection is streamed in the same batch-wise manner over `sink.query()`'s rows (chunking the returned list). `SqliteAuditSink.query()` materializes today — that is pre-existing behavior and out of scope; if audit logs themselves ever grow huge, a chunked `query_iter(batch_size)` on the sink is a documented follow-up (§5), not part of this slice.
 - No fabricated memory figures anywhere: the doc/CHANGELOG claims "bounded by `batch_size`, not store size" and never an MB/GB number.
+- **Measurement plan (marked measured-or-target, reproducible).** The roadmap's anti-hallucination rule demands any memory bound be backed by a reproducible script or be explicitly a target. The bound above is the **target**. The **measured** enforcement is a pytest (`test_stream_peak_memory_differential` in §6) using stdlib `tracemalloc` on a programmatically seeded store (20 000 work items + 20 000 page versions with ~200-char bodies — no checked-in fixture): (1) the memory-resident export's tracemalloc peak must be ≥ 8 MiB (a floor guard so the test cannot pass trivially on a tiny store); (2) the streamed export's peak must be < 25% of that. The assertion is a **differential** (streaming vs memory-resident on the same store/machine) — never an absolute MB/GB figure — so it is deterministic in CI and stays within the no-fabricated-figures stance. Docs quote it as: "measured: streaming peak ≤ 25% of the memory-resident peak on the 40k-row tracemalloc workload; target: O(batch_size) additional memory."
 
 ### 3.4 Writer algorithm sketch (implementation guidance)
 
@@ -169,7 +173,7 @@ The roadmap bullet names **export**. Import stays exactly as-is:
 | Audit collection chunking | Streamed over `sink.query()`'s list; no sink API change. If audit logs grow huge, a chunked `SqliteAuditSink.query_iter(batch_size)` is a follow-up. | The sink's materializing `query()` is pre-existing; changing it expands this slice into the audit pipeline. |
 | In-memory API (`export_domain` / `export_domain_json`) | **Stays**, unchanged, as the reference and for API callers. | Removing it would break callers and the byte-identity tests' oracle; both paths must agree, enforced by tests. |
 | `batch_size` default | 500, API-level only; **no `--batch-size` CLI flag**. | Keeps the CLI surface minimal; operators don't need to tune it. |
-| New flags | **None.** Streaming is the mechanism, not a mode. | The roadmap item is about removing the memory ceiling, not adding opt-in complexity. |
+| New flags | **One:** `--progress` (opt-in stderr reporting, §2 point 4). **No** `--stream` / `--batch-size` flags — streaming is the mechanism, not a mode. | The roadmap item requires progress reporting so operators see huge exports are alive (acceptance criterion 5); `--progress` is reporting-only and script-safe (silent by default). |
 | Non-`DomainImportError` failures | Propagate as today (traceback); `--out` temp is cleaned up first. | Matches current uncaught-exception behavior; only the partial-file risk is new and it is mitigated by atomicity. |
 
 ---
@@ -198,6 +202,9 @@ No new fixtures (no wire-format change). The suite reuses the canonical `_seed` 
 | `test_cli_export_out_atomic_on_error` | Pre-create `PATH` with sentinel content; monkeypatch the row iterator to raise mid-stream (e.g. patch `fetchmany` to raise on the 2nd call) → exit non-zero, `PATH` still holds the sentinel bytes, **no** `*.tmp*` files remain in the directory. |
 | `test_cli_export_include_audit_no_sink_stdout_empty` | `--include-audit` without sink → exit 2, stderr names `--audit-log`/`INNERWORK_AUDIT_DB`, stdout empty (fail-before-write preserved). |
 | `test_existing_suites_stay_green` | `tests/test_portability.py`, `tests/test_portability_audit.py`, `tests/test_migration.py` pass **unmodified** — the regression net for byte identity and audit composition. |
+| `test_stream_progress_callback_cadence` | `progress` callback: called at collection start (0), after batches, and with final counts; arguments are only `str` collection names + `int` counts (no row content). |
+| `test_cli_export_progress_stderr` | `export --progress` on a store with a collection > 0 rows → exit 0, stderr contains `export:` lines with collection names + counts and **no row content**; stdout still parses as the exact envelope JSON (never interleaved). |
+| `test_stream_peak_memory_differential` | 40k-row store (20k work items + 20k page versions, ~200-char bodies); `tracemalloc`: memory-resident peak ≥ 8 MiB (floor guard) and streamed peak < memory-resident peak / 4. **Measured** claim per §3.3. |
 
 ---
 
@@ -223,7 +230,8 @@ Implementation worker MUST run each check and quote the (empty / verified) outpu
 | Gate | Verification |
 |---|---|
 | Byte-identity | `test_stream_byte_identical_to_memory_export` (+ unicode variant, empty store, multi-batch) pass; `tests/test_portability.py`, `tests/test_portability_audit.py`, `tests/test_migration.py` untouched and green — every existing round-trip assertion holds for streamed files. |
-| Bounded memory | `test_stream_never_calls_fetchall` passes; the stream path uses `fetchmany(batch_size)` only. |
+| Bounded memory | `test_stream_never_calls_fetchall` passes; the stream path uses `fetchmany(batch_size)` only; `test_stream_peak_memory_differential` passes (≥ 8 MiB floor, < 25% differential — not trivially satisfied). |
+| Progress | `test_stream_progress_callback_cadence` + `test_cli_export_progress_stderr` pass: stderr lines at the documented cadence, no row content, stdout JSON clean. |
 | Atomic `--out` | `test_cli_export_out_atomic_on_error` passes (sentinel preserved, no temp litter, non-zero exit). |
 | Audit composition | `test_stream_include_audit_byte_identical` / `_no_sink_fails_before_write` / `_redaction_user` / `test_stream_audit_event_emitted_after_success` pass — v2 trailing `audit` streams correctly, fail-before-write preserved, redaction honored, portability event shape unchanged. |
 | CLI honest | `test_cli_export_out_byte_identical` / `_include_audit` / `test_cli_export_stdout_byte_identical` / `_include_audit_no_sink_stdout_empty` pass (exit codes 0/2, no silent empty audit, no clobbered files). |
@@ -233,24 +241,26 @@ Implementation worker MUST run each check and quote the (empty / verified) outpu
 
 ## §9 Exit criteria (done definition for the implementation task)
 
-Per the roadmap item and child task `t_streaming_export_impl`:
+Per the roadmap item and child task `t_80d6c615`:
 
 1. `export_domain_json_stream(store, out, ...)` produces output **byte-identical** to `export_domain_json(store, ...)` for every tested shape (indent 2/None, empty/full stores, unicode, include_audit on/off), while fetching rows in `batch_size` batches (never `fetchall`).
 2. `innerwork export --out PATH` streams to an atomic temp+rename target; `innerwork export` streams to stdout; exit codes and the `--include-audit`/`--audit-log` contract are unchanged; `--include-audit` without a sink still fails before any output with exit 2.
-3. No wire-format change: streamed files are ordinary format-1/2 envelopes and import unchanged; the existing portability/audit/migration suites pass unmodified.
-4. `docs/migration-guide.md` §2/§6 note the streaming behavior + partial-stdout caveat; CHANGELOG `[Unreleased]` gains the `### Changed — Streaming export` entry; no compliance claims, no fabricated memory figures.
-5. `uv run pytest -x && uv run ruff check . && uv run pyright` all green before push.
-6. PR opened against `main` on `feat/streaming-export`, **DO NOT MERGE** — end with `kanban_block(reason="qa-required: PR #<num> (<title>) opened; local pytest+ruff+pyright all green")` per the child task's mandate.
+3. `innerwork export --progress` reports stderr progress at the §2 cadence with no row content; `--help` documents `--progress`; without the flag stderr is silent on success.
+4. Memory bound is documented as target (O(batch_size)) **and** measured (tracemalloc differential: streamed peak < 25% of memory-resident peak on the 40k-row workload with a ≥ 8 MiB floor) — no absolute MB/GB figures anywhere.
+5. No wire-format change: streamed files are ordinary format-1/2 envelopes and import unchanged; the existing portability/audit/migration suites pass unmodified.
+6. `docs/migration-guide.md` §2/§6 note the streaming behavior + partial-stdout caveat; CHANGELOG `[Unreleased]` gains the `### Changed — Streaming export` entry; no compliance claims, no fabricated memory figures.
+7. `uv run pytest -x && uv run ruff check . && uv run pyright` all green before push.
+8. PR opened against `main` on `feat/streaming-export`, **DO NOT MERGE** — end with `kanban_block(reason="qa-required: PR #<num> (<title>) opened; local pytest+ruff+pyright all green")` per the child task's mandate.
 
 ---
 
 ## §10 Handoff checklist for the implementation worker (atlassianeng)
 
-1. Branch from `main` at the current HEAD: `git checkout -b feat/streaming-export` (child task `t_streaming_export_impl` pins this branch name; worktree workspace at `/home/eml/atlassian/atlassian-innerwork`).
+1. Branch from `main` at the current HEAD: `git checkout -b feat/streaming-export` (child task `t_80d6c615` pins this branch name; worktree workspace at `/home/eml/atlassian/atlassian-innerwork`).
 2. Write files in §1 order. The scoping doc (this file) is not modified.
-3. Implement `export_domain_json_stream` per §3: batch-fetch via `fetchmany(batch_size)`; byte-identical composer per §3.4; `include_audit`/`audit_actor_kind` mirrored from `export_domain_json` with fail-before-write sink check; `_audit_portability` after success with the returned counts; add to `__all__`.
-4. Refactor the CLI `export` branch per §2: stream to temp+`os.replace` for `--out` (temp cleaned on every failure path), stream to `sys.stdout` otherwise, append the trailing `"\n"` after the call; keep the `DomainImportError` → stderr + exit 2 contract.
-5. Add `tests/test_portability_stream.py` per §6, including the master byte-identity gate, the `fetchall`-ban test, the atomicity test, and the audit-composition tests.
+3. Implement `export_domain_json_stream` per §3: batch-fetch via `fetchmany(batch_size)`; byte-identical composer per §3.4; `include_audit`/`audit_actor_kind` mirrored from `export_domain_json` with fail-before-write sink check; `progress` callback per batch; `_audit_portability` after success with the returned counts; add to `__all__`.
+4. Refactor the CLI `export` branch per §2: stream to temp+`os.replace` for `--out` (temp cleaned on every failure path), stream to `sys.stdout` otherwise, append the trailing `"\n"` after the call; add `--progress` wired to the §2 cadence on stderr (no row content); keep the `DomainImportError` → stderr + exit 2 contract.
+5. Add `tests/test_portability_stream.py` per §6, including the master byte-identity gate, the `fetchall`-ban test, the atomicity test, the audit-composition tests, the progress-cadence tests, and the tracemalloc `test_stream_peak_memory_differential` (≥ 8 MiB floor, < 25% differential).
 6. Add the migration-guide §2/§6 notes and the CHANGELOG `### Changed — Streaming export` entry; optionally move the roadmap bullet (§1 row 7).
 7. Run the CI-parity gate exactly as GitHub Actions does: `uv run pytest -x`, `uv run ruff check .`, `uv run pyright`. **All three must be green before push.**
 8. Run the §7 grep checks and quote results in the PR body.
