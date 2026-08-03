@@ -1,6 +1,6 @@
 # Migration Guide
 
-Status: Phase 10 — synthetic-fixture round-trip only.
+Status: Phase 10 — synthetic-fixture round-trip plus the markdown-tree importer (`import-markdown`).
 
 This guide explains the migration surface that `innerwork` ships in
 Phase 10. The goals are:
@@ -59,6 +59,11 @@ What is **not** in the portable surface (by design):
   against the store; it is intentionally not replayed across a migration.
 - Permissions configuration that lives outside the domain store (for
   example, environment variables consumed by the permissions module).
+- Markdown frontmatter: `innerwork import-markdown` consumes a YAML
+  frontmatter block at import time (see §4), but `export` emits only
+  `title` / `body` / `author` / `created_at` per `PageVersion`. The
+  frontmatter envelope is a one-way door — a re-export never re-emits
+  it, so operators should not expect byte-identical `.md` files back.
 
 ---
 
@@ -155,7 +160,97 @@ file it under the `bug` label per `docs/beta-program.md` §4.
 
 ---
 
-## 4. Failure modes and recovery
+## 4. Markdown-tree importer
+
+`innerwork import-markdown` reads a directory tree of `.md` files and
+writes it into the `spaces` / `pages` collections **directly through
+the domain store** — it does not produce a portability envelope.
+Input is purely local files; the command makes no network access.
+
+### 4.1 Command
+
+```
+innerwork import-markdown <dir> --database-url sqlite:///path/to/fresh.db [--author NAME] [--dry-run]
+```
+
+- `<dir>` — root of the markdown tree. Must be an existing directory;
+  otherwise the command prints an error and exits 2.
+- `--author` — default author/owner for imported pages and spaces.
+  Frontmatter `author` wins per page. Defaults to `importer`.
+- `--dry-run` — scan and validate the tree without writing anything.
+  The fresh-target check still runs, so the summary is an honest
+  preview of a real import.
+- Fresh-target requirement: the command refuses to run when `spaces`,
+  `pages`, or `page_versions` already contain rows (exit 2, nothing
+  written). It never overlays an existing knowledge graph.
+- Success prints a JSON summary to stdout:
+  `{"spaces": N, "pages": N, "warnings": [...], "dry_run": false}`.
+
+### 4.2 Directory → space/page mapping
+
+- Each **immediate subdirectory** of `<dir>` is one space. A space is
+  created even if it ends up with zero pages — the tree says it exists.
+- Space key: the directory name is uppercased, every character outside
+  `[A-Z0-9]` is dropped, and the result must match `^[A-Z][A-Z0-9]{1,9}$`
+  (2–10 characters, uppercase). Invalid results are an **error** telling
+  the operator to rename the directory — keys are never silently
+  truncated. Two directories mapping to the same key are an error
+  listing both paths.
+- Every `*.md` file anywhere below a space directory is one page.
+  Non-`.md` files are ignored silently. Symlinks (files and
+  directories) are skipped.
+- Page title: frontmatter `title` if present; otherwise the relative
+  path stem with `/` preserved (`space_dir/guides/getting-started.md`
+  → `guides/getting-started`). The model has no parent-page field, so
+  nested directories flatten into the title and the on-disk structure
+  remains recoverable from titles.
+- Page body: file content with the frontmatter block (if any) removed,
+  then leading/trailing blank lines stripped. An empty file imports as
+  an empty-body page.
+- Every page becomes **version 1**; no version history is imported.
+- Root-level `.md` files (directly under `<dir>`) are an **error** —
+  they have no space to belong to.
+
+### 4.3 Frontmatter
+
+An optional YAML block is recognized when the file's first line is
+exactly `---`; the block ends at the next line that is exactly `---`.
+Parsed with `yaml.safe_load` (PyYAML is a declared dependency).
+
+- `title` — overrides the path-stem title (must be a non-blank string
+  ≤ 200 characters).
+- `author` — overrides `--author` (must be a non-blank string).
+- `created_at` — recognized and validated as an ISO-8601 timestamp;
+  the page timestamp is the import-wide `created_at` and this key is
+  not applied per file.
+- Unknown keys are ignored and recorded as a per-file warning in the
+  summary's `warnings` list (the model has nowhere to store them).
+- Malformed input — an unclosed `---` block or YAML that fails
+  `safe_load` — aborts the import with an error naming the file
+  (exit 2). Loud and deterministic beats guessing.
+
+### 4.4 Round-trip posture
+
+`import-markdown → export → import` preserves the imported *content*:
+titles, bodies, and authors round-trip through the portability
+envelope without loss. Frontmatter itself is a **one-way door** — it
+is consumed at import time and never re-emitted by `export`, so the
+round-trip returns page content, not byte-identical `.md` files.
+
+### 4.5 Limits (v1)
+
+- `[[wikilinks]]` are left verbatim in the body; there is no page→page
+  link table to resolve them against.
+- Attachments and images are not imported (non-`.md` files are
+  ignored).
+- No version history: one file = one page at version 1.
+- No page hierarchy: nested directories flatten into page titles.
+- The importer creates only `spaces` / `pages` / `page_versions`; it
+  never creates projects, work items, links, or comments.
+
+---
+
+## 5. Failure modes and recovery
 
 | Failure | Cause | Recovery |
 |---|---|---|
@@ -173,7 +268,7 @@ disposable.
 
 ---
 
-## 5. Synthetic fixture contract
+## 6. Synthetic fixture contract
 
 The synthetic fixture lives at `tests/fixtures/synthetic_migration.json`
 and is loaded both by:
@@ -198,7 +293,7 @@ Fixture rules:
 
 ---
 
-## 6. What this guide is NOT
+## 7. What this guide is NOT
 
 - It is **not** a guide for migrating from hosted Jira or Confluence.
   Phase 10 ships no such importer. The roadmap document lists this as a
@@ -213,11 +308,12 @@ Fixture rules:
 
 ---
 
-## 7. Cross-references
+## 8. Cross-references
 
 - `docs/launch-plan.md`
 - `docs/beta-program.md`
 - `docs/operations-runbook.md`
 - `docs/roadmap.md`
 - `docs/metrics-dashboard.md`
-- `CHANGELOG.md` (entries under `[Phase 10]`).
+- `CHANGELOG.md` (entries under `[Phase 10]` and the `[Unreleased]`
+  markdown-tree importer section).

@@ -41,6 +41,10 @@ suite. They form the stable surface that the beta program exercises.
   `migrate --source synthetic`, `metrics`.
 - Synthetic-fixture importer and round-trip test
   (`tests/test_migration.py`).
+- Markdown-tree importer (`innerwork import-markdown`) — reads a local
+  directory tree of `.md` files into `spaces` / `pages` via
+  `src/innerwork/markdown_importer.py`; documented in
+  `docs/migration-guide.md` §4. Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -64,9 +68,6 @@ fluid and may change as beta feedback arrives.
 
 ### Migration
 
-- Build a Markdown-tree importer (read a directory of `.md` files into
-  the `pages` / `spaces` collections). Lower-risk than third-party
-  importers because the input is local files only.
 - Investigate a CSV / TSV importer for `work_items` and `projects`.
 - Hosted-Jira and hosted-Confluence importers are **not** committed
   and not in active design. They are mentioned only to say: when /
