@@ -492,3 +492,65 @@ def test_cli_invalid_status_exit_2(tmp_path: Path) -> None:
     r = _run_cli("import-csv", str(bad), "--database-url", f"sqlite:///{tmp_path / 'z.db'}")
     assert r.returncode == 2, (r.returncode, r.stderr)
     assert "Blocked" in r.stderr
+
+
+# ---------------------------------------------------------------------------
+# scan_csv_file: remaining validation error paths (QA coverage additions)
+# ---------------------------------------------------------------------------
+
+
+def test_scan_missing_file_rejected() -> None:
+    with pytest.raises(CsvImportError, match="not a file"):
+        scan_csv_file("/nonexistent/definitely-missing.csv", owner="importer")
+
+
+def test_scan_blank_owner_rejected() -> None:
+    with pytest.raises(CsvImportError, match="owner"):
+        scan_csv_file(FIXTURE_CSV, owner="   ")
+
+
+def test_scan_blank_created_at_rejected() -> None:
+    with pytest.raises(CsvImportError, match="created_at"):
+        scan_csv_file(FIXTURE_CSV, owner="importer", created_at="  ")
+
+
+def test_scan_unknown_delimiter_rejected() -> None:
+    with pytest.raises(CsvImportError, match="unknown delimiter"):
+        scan_csv_file(FIXTURE_CSV, owner="importer", delimiter="semicolon")
+
+
+def test_scan_non_utf8_file_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "latin1.csv"
+    f.write_bytes(b"project,title\nENG,Caf\xe9\n")  # latin-1 byte, not valid utf-8
+    with pytest.raises(CsvImportError, match="cannot parse"):
+        scan_csv_file(f, owner="importer")
+
+
+def test_scan_blank_project_cell_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "blank_project.csv"
+    f.write_text("project,title\n,One\n", encoding="utf-8")
+    with pytest.raises(CsvImportError, match="project is blank"):
+        scan_csv_file(f, owner="importer")
+
+
+def test_scan_blank_title_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "blank_title.csv"
+    f.write_text("project,title\nENG,\n", encoding="utf-8")
+    with pytest.raises(CsvImportError, match="title is blank"):
+        scan_csv_file(f, owner="importer")
+
+
+def test_scan_title_too_long_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "long_title.csv"
+    f.write_text(f"project,title\nENG,{'x' * 201}\n", encoding="utf-8")
+    with pytest.raises(CsvImportError, match="200 characters"):
+        scan_csv_file(f, owner="importer")
+
+
+def test_scan_description_too_long_rejected(tmp_path: Path) -> None:
+    f = tmp_path / "long_desc.csv"
+    f.write_text(
+        f"project,title,description\nENG,One,{'y' * 4001}\n", encoding="utf-8"
+    )
+    with pytest.raises(CsvImportError, match="4000 characters"):
+        scan_csv_file(f, owner="importer")
