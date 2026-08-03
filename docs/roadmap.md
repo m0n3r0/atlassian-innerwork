@@ -45,6 +45,10 @@ suite. They form the stable surface that the beta program exercises.
   directory tree of `.md` files into `spaces` / `pages` via
   `src/innerwork/markdown_importer.py`; documented in
   `docs/migration-guide.md` §4. Post-phase-10 addition.
+- CSV/TSV importer (`innerwork import-csv`) — reads a local CSV/TSV
+  file of work-item rows into `projects` / `work_items` via
+  `src/innerwork/csv_importer.py`; documented in
+  `docs/migration-guide.md` §5. Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -68,7 +72,6 @@ fluid and may change as beta feedback arrives.
 
 ### Migration
 
-- Investigate a CSV / TSV importer for `work_items` and `projects`.
 - Hosted-Jira and hosted-Confluence importers are **not** committed
   and not in active design. They are mentioned only to say: when /
   if those land, they will go through a dedicated scoping document

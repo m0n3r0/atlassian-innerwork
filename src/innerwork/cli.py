@@ -14,6 +14,7 @@ from .analytics import domain_rollup
 from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
 from .control_plane import ControlPlane
+from .csv_importer import CsvImportError, import_csv_file
 from .domain import default_workflow
 from .domain_store import (
     DomainStore,
@@ -175,6 +176,38 @@ def build_parser() -> argparse.ArgumentParser:
         help="Scan and validate without writing to the store",
     )
 
+    csv_importer_cmd = subcommands.add_parser(
+        "import-csv",
+        help="Import a CSV/TSV file of work-item rows into projects and work items",
+    )
+    _add_db_arg(csv_importer_cmd)
+    csv_importer_cmd.add_argument(
+        "file",
+        type=Path,
+        help="Path to the CSV/TSV file (each row is one work item)",
+    )
+    csv_importer_cmd.add_argument(
+        "--owner",
+        default="importer",
+        help="Owner identifier for imported projects (default: importer)",
+    )
+    csv_importer_cmd.add_argument(
+        "--delimiter",
+        choices=("auto", "comma", "tab"),
+        default="auto",
+        help="Delimiter: auto (default; .tsv → tab, anything else → comma), comma, or tab",
+    )
+    csv_importer_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Scan and validate without writing to the store",
+    )
+    csv_importer_cmd.add_argument(
+        "--allow-populated",
+        action="store_true",
+        help="Skip the fresh-target check (conflicting rows still error)",
+    )
+
     return parser
 
 
@@ -219,6 +252,7 @@ def main(argv: list[str] | None = None) -> int:
         "migrate",
         "metrics",
         "import-markdown",
+        "import-csv",
     }:
         return _domain_dispatch(args)
     raise AssertionError(f"unhandled command: {args.command}")
@@ -399,6 +433,21 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
                 dry_run=args.dry_run,
             )
         except (MarkdownImportError, OSError) as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            return 2
+        _print_json(summary)
+        return 0
+    if args.command == "import-csv":
+        try:
+            summary = import_csv_file(
+                store,
+                args.file,
+                owner=args.owner,
+                delimiter=args.delimiter,
+                dry_run=args.dry_run,
+                allow_populated=args.allow_populated,
+            )
+        except (CsvImportError, OSError) as exc:
             sys.stderr.write(f"error: {exc}\n")
             return 2
         _print_json(summary)
