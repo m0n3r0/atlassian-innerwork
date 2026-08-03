@@ -56,7 +56,9 @@ What is **not** in the portable surface (by design):
 - Idempotency cache rows.
 - Transient notification state.
 - Audit log rows. The audit log is a record of operations performed
-  against the store; it is intentionally not replayed across a migration.
+  against the store; it is intentionally **not** part of the default
+  portable surface. The optional `export --include-audit` flag adds it
+  explicitly (see §6) — audit rows never leave the store by default.
 - Permissions configuration that lives outside the domain store (for
   example, environment variables consumed by the permissions module).
 - Markdown frontmatter: `innerwork import-markdown` consumes a YAML
@@ -386,7 +388,108 @@ round-trip returns domain content, not byte-identical `.csv` files.
 
 ---
 
-## 6. Failure modes and recovery
+## 6. Audit-bearing export (`export --include-audit`)
+
+Audit log rows are **not** part of the default portable surface. When an
+operator wants to move the audit trail along with the domain data, the
+`export` command gains an explicit, opt-in flag:
+
+### 6.1 Command
+
+```
+innerwork export [--database-url sqlite:///...] [--out PATH] [--include-audit] [--audit-log PATH]
+innerwork import <input.json> [--database-url sqlite:///...] [--audit-log PATH]
+```
+
+- `--include-audit`: include the store's audit log rows in the envelope
+  and bump `format_version` to 2. **Without the flag, the output is
+  byte-identical to today** (`format_version` 1, 9 domain collections,
+  no `audit` key).
+- `--audit-log <path>`: path to the SQLite audit DB to wire as the
+  store's audit sink (`INNERWORK_AUDIT_DB` env fallback). Wiring the
+  sink also makes CLI writes (`project-create`, `work-item-create`,
+  `work-item-transition`, page writes via the importers) emit audit rows
+  — the CLI previously never wired a sink, so shipped writes produced
+  zero audit rows (audit finding F1).
+- **Error contract:** `export --include-audit` with no sink configured
+  exits 2: `error: --include-audit requires an audit sink; pass
+  --audit-log or set INNERWORK_AUDIT_DB`. Importing a v2 payload with
+  audit rows but no sink also exits 2 — silently dropping restored rows
+  would violate "without duplication or loss".
+
+### 6.2 Format version and envelope
+
+`format_version` stays 1 for default exports. Only `--include-audit`
+emits `format_version` 2, which is the v1 envelope plus one trailing
+`audit` collection (the sink's rows, in sink order). `schema_version`
+is unchanged. Import accepts both 1 and 2; a v1 payload carrying an
+`audit` key and a v2 payload missing it are both rejected loudly.
+
+### 6.3 Audit row schema
+
+Each element of `audit` is exactly the JSON form of one `AuditEvent`:
+
+```json
+{
+  "event_id": "uuid-string",
+  "ts": 1785778000.123,
+  "actor": "alice",
+  "actor_kind": "user",
+  "surface": "jira_workflow",
+  "entity_kind": "WorkItem",
+  "entity_id": "wi-1",
+  "action": "transition",
+  "before": {"state": "todo"},
+  "after": {"state": "in_progress"},
+  "metadata": {"transition_id": 1}
+}
+```
+
+Eligibility is **whatever the sink holds** — all surfaces, no
+allowlist, no synthesis. The envelope carries the `surface` field
+verbatim; surfaces that are reserved-but-unwired today (e.g.
+`permission_change`) produce no rows and none are fabricated.
+
+### 6.4 Redaction
+
+Every exported row passes through `field_acl.redact_for` with the
+operator actor kind (default `"system"` → rows verbatim; the operator
+already owns the audit DB file). Non-system actor kinds (future
+API/HTTP callers) get the existing policy applied — e.g. `"user"` masks
+the `actor` field.
+
+### 6.5 Import semantics
+
+Strict, all-or-nothing:
+
+1. Every audit row is reconstructed through `make_event` **before any
+   write** — `surface` and `actor_kind` are closed enums, so no event
+   injection is possible.
+2. `event_id` conflicts with the existing sink abort the whole import
+   (domain rows included), before any INSERT.
+3. Audit rows restore into the wired sink via `sink.record` in payload
+   order after the 9 domain collections; the sink's append-only
+   triggers stay intact.
+4. A v2 payload with rows and no sink errors; `"audit": []` is valid
+   without a sink.
+
+### 6.6 Round-trip honesty
+
+- Default v1 exports round-trip byte-identical, unchanged.
+- Audit-bearing exports are **no-loss / no-duplication** (every payload
+  `event_id` lands in the sink exactly once), **not** byte-stable
+  across cycles: the append-only sink grows by exactly one
+  `portability_export` / `portability_import` event per export/import.
+  This is correct append-only behavior, documented here so it is never
+  mistaken for a defect.
+
+> This is an opt-in **operational convenience** for moving a self-hosted
+> store between hosts — **not** a compliance/legal export; no
+> certifications are claimed or implied.
+
+---
+
+## 7. Failure modes and recovery
 
 | Failure | Cause | Recovery |
 |---|---|---|
@@ -404,7 +507,7 @@ disposable.
 
 ---
 
-## 7. Synthetic fixture contract
+## 8. Synthetic fixture contract
 
 The synthetic fixture lives at `tests/fixtures/synthetic_migration.json`
 and is loaded both by:
@@ -429,7 +532,7 @@ Fixture rules:
 
 ---
 
-## 8. What this guide is NOT
+## 9. What this guide is NOT
 
 - It is **not** a guide for migrating from hosted Jira or Confluence.
   Phase 10 ships no such importer. The roadmap document lists this as a
@@ -444,7 +547,7 @@ Fixture rules:
 
 ---
 
-## 9. Cross-references
+## 10. Cross-references
 
 - `docs/launch-plan.md`
 - `docs/beta-program.md`

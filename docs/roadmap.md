@@ -49,6 +49,12 @@ suite. They form the stable surface that the beta program exercises.
   file of work-item rows into `projects` / `work_items` via
   `src/innerwork/csv_importer.py`; documented in
   `docs/migration-guide.md` §5. Post-phase-10 addition.
+- Audit-bearing portability export (`innerwork export --include-audit`)
+  — opt-in inclusion of the store's audit log in the portability
+  payload behind an explicit flag and `format_version` 2; default
+  exports stay byte-identical. Implemented in `src/innerwork/portability.py`
+  / `src/innerwork/cli.py`; documented in `docs/migration-guide.md` §6.
+  Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -79,10 +85,6 @@ fluid and may change as beta feedback arrives.
 
 ### Portability format
 
-- Consider adding optional, opt-in inclusion of audit log rows in the
-  portability payload, behind an explicit `--include-audit` flag and
-  a bumped `format_version`. The default would remain "audit not
-  exported" so existing snapshots round-trip unchanged.
 - Consider streaming export for very large stores (the current shape
   is memory-resident; this has been acceptable through Phase 10).
 

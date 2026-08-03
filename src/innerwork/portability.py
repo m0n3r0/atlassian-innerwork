@@ -21,10 +21,13 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from .audit import AuditEvent, make_event
 from .domain_store import DOMAIN_SCHEMA_VERSION, DomainStore
+from .field_acl import redact_for
 
 __all__ = (
     "PORTABILITY_FORMAT_VERSION",
+    "PORTABILITY_FORMAT_VERSION_AUDIT",
     "DomainImportError",
     "export_domain",
     "export_domain_json",
@@ -36,6 +39,11 @@ __all__ = (
 # Bump if the portable wire format itself changes shape, independent of
 # the underlying DB schema version.
 PORTABILITY_FORMAT_VERSION = 1
+
+# Emitted ONLY when `export --include-audit` is used (or the API-level
+# `include_audit=True` parameter). Default exports stay at version 1 so
+# existing snapshots round-trip byte-identical.
+PORTABILITY_FORMAT_VERSION_AUDIT = 2
 
 # Ordered list of top-level collection keys in every export. The order is
 # load-bearing for both byte-stable round-trip and for FK-safe inserts.
@@ -58,10 +66,15 @@ class DomainImportError(ValueError):
 
 # ----------------------------------------------------------------- export
 
-def export_domain(store: DomainStore) -> dict[str, Any]:
+def export_domain(
+    store: DomainStore,
+    *,
+    include_audit: bool = False,
+    audit_actor_kind: str = "system",
+) -> dict[str, Any]:
     """Return a deterministic snapshot of every persisted domain row.
 
-    Output shape::
+    Output shape (default):::
 
         {
           "format_version": 1,
@@ -77,13 +90,23 @@ def export_domain(store: DomainStore) -> dict[str, Any]:
           "page_comments": [...],
         }
 
+    With ``include_audit=True`` the ``format_version`` bumps to
+    :data:`PORTABILITY_FORMAT_VERSION_AUDIT` (2) and a trailing ``audit``
+    collection is appended — the sink's rows, redacted for
+    ``audit_actor_kind`` (default ``"system"`` → verbatim). The audit
+    collection is NOT part of :data:`_COLLECTION_ORDER`; default exports
+    stay byte-identical to version 1.
+
     Each list is sorted by a stable primary key so identical stores produce
     identical bytes (modulo dict-key insertion order, preserved by Python
     3.7+ and ``json.dumps(sort_keys=False)``).
     """
 
+    format_version = (
+        PORTABILITY_FORMAT_VERSION_AUDIT if include_audit else PORTABILITY_FORMAT_VERSION
+    )
     payload: dict[str, Any] = {
-        "format_version": PORTABILITY_FORMAT_VERSION,
+        "format_version": format_version,
         "schema_version": DOMAIN_SCHEMA_VERSION,
     }
     with store._connect() as connection:  # noqa: SLF001 — portability owns the schema
@@ -176,15 +199,63 @@ def export_domain(store: DomainStore) -> dict[str, Any]:
             "FROM page_comments ORDER BY comment_id",
             ("comment_id", "page_id", "author", "body", "created_at"),
         )
+    if include_audit:
+        payload["audit"] = _export_audit_rows(store, audit_actor_kind)
     return payload
 
 
-def export_domain_json(store: DomainStore, *, indent: int | None = 2) -> str:
-    """Return ``export_domain(store)`` serialized to deterministic JSON."""
+def _export_audit_rows(store: DomainStore, actor_kind: str) -> list[dict[str, Any]]:
+    """Snapshot the wired sink's rows as JSON objects, redacted per actor kind.
 
-    payload = export_domain(store)
-    _audit_portability(store, action="export", counts={k: len(v) for k, v in payload.items()
-                                                       if isinstance(v, list)})
+    Raises :class:`DomainImportError` when ``include_audit`` is requested but
+    no sink is wired — an export that silently emits an empty audit
+    collection would be dishonest. Rows are the sink's ``query()`` output in
+    its native order; every row passes through ``field_acl.redact_for``
+    (``"system"`` bypasses all ACLs → verbatim; ``"user"``/``"service"`` mask
+    the ``actor`` field per ``DEFAULT_POLICY``).
+    """
+
+    sink = getattr(store, "audit_sink", None)
+    if sink is None:
+        raise DomainImportError(
+            "--include-audit requires an audit sink; pass --audit-log or "
+            "set INNERWORK_AUDIT_DB"
+        )
+    return [
+        redact_for(actor_kind, "AuditEvent", event.as_jsonable())
+        for event in sink.query()
+    ]
+
+
+def export_domain_json(
+    store: DomainStore,
+    *,
+    indent: int | None = 2,
+    include_audit: bool = False,
+    audit_actor_kind: str = "system",
+) -> str:
+    """Return ``export_domain(store)`` serialized to deterministic JSON.
+
+    The payload (including any ``audit`` collection) is snapshotted BEFORE
+    ``_audit_portability`` emits the ``portability_export`` event, so a
+    payload never contains the export event it just triggered.
+    """
+
+    payload = export_domain(
+        store, include_audit=include_audit, audit_actor_kind=audit_actor_kind
+    )
+    _audit_portability(
+        store,
+        action="export",
+        counts={
+            k: len(v) for k, v in payload.items() if isinstance(v, list)
+        },
+        format_version=(
+            PORTABILITY_FORMAT_VERSION_AUDIT
+            if include_audit
+            else PORTABILITY_FORMAT_VERSION
+        ),
+    )
     return json.dumps(payload, indent=indent, sort_keys=False)
 
 
@@ -193,10 +264,13 @@ def _audit_portability(
     *,
     action: str,
     counts: dict[str, int],
+    format_version: int,
 ) -> None:
     """Best-effort audit emission for portability export/import.
 
     No-op when the store has no audit sink wired (phase 5/6 callers).
+    Records the *effective* ``format_version`` (2 for audit-bearing exports)
+    so the audit trail itself distinguishes audit-bearing payloads.
     """
 
     if getattr(store, "audit_sink", None) is None:
@@ -210,7 +284,7 @@ def _audit_portability(
         action=action,
         before=None,
         after=None,
-        metadata={"counts": counts, "format_version": PORTABILITY_FORMAT_VERSION},
+        metadata={"counts": counts, "format_version": format_version},
     )
 
 
@@ -236,8 +310,14 @@ def import_domain(store: DomainStore, payload: Mapping[str, Any]) -> dict[str, i
     Returns a count summary ``{collection: rows_inserted}``.
     """
 
-    _validate_envelope(payload)
+    format_version = _validate_envelope(payload)
     _validate_fresh_target(store)
+    audit_events = (
+        _validate_audit_rows(payload)
+        if format_version == PORTABILITY_FORMAT_VERSION_AUDIT
+        else ()
+    )
+    _validate_audit_sink(store, audit_events)
     counts: dict[str, int] = {}
     with store._connect() as connection:  # noqa: SLF001
         # FK-safe ordering — parents first.
@@ -325,7 +405,17 @@ def import_domain(store: DomainStore, payload: Mapping[str, Any]) -> dict[str, i
             connection, "work_item_transitions", payload.get("transitions", [])
         )
         _bump_autoincrement(connection, "page_versions", payload.get("page_versions", []))
-    _audit_portability(store, action="import", counts=counts)
+    # Restore pass — AFTER the 9 domain collections and sequence rebuild, in
+    # payload order. The portability_import event from `_audit_portability`
+    # below is recorded after this pass, so an import's own event never
+    # collides with a payload row.
+    for event in audit_events:
+        store.audit_sink.record(event)
+    if format_version == PORTABILITY_FORMAT_VERSION_AUDIT:
+        counts["audit"] = len(audit_events)
+    _audit_portability(
+        store, action="import", counts=counts, format_version=format_version
+    )
     return counts
 
 
@@ -343,11 +433,20 @@ def import_domain_json(store: DomainStore, raw: str) -> dict[str, int]:
 
 # ----------------------------------------------------------------- helpers
 
-def _validate_envelope(payload: Mapping[str, Any]) -> None:
+def _validate_envelope(payload: Mapping[str, Any]) -> int:
+    """Validate the envelope header; return the effective ``format_version``.
+
+    Accepts ``format_version`` 1 (legacy) and 2 (audit-bearing). The version
+    is authoritative: a v1 payload carrying an ``audit`` key and a v2
+    payload missing it are both rejected loudly — the envelope must not lie
+    about what it carries.
+    """
+
     fmt = payload.get("format_version")
-    if fmt != PORTABILITY_FORMAT_VERSION:
+    if fmt not in (PORTABILITY_FORMAT_VERSION, PORTABILITY_FORMAT_VERSION_AUDIT):
         raise DomainImportError(
-            f"unsupported format_version: expected {PORTABILITY_FORMAT_VERSION}, got {fmt!r}"
+            f"unsupported format_version: expected {PORTABILITY_FORMAT_VERSION} "
+            f"or {PORTABILITY_FORMAT_VERSION_AUDIT}, got {fmt!r}"
         )
     schema = payload.get("schema_version")
     if schema != DOMAIN_SCHEMA_VERSION:
@@ -357,6 +456,87 @@ def _validate_envelope(payload: Mapping[str, Any]) -> None:
     for key in _COLLECTION_ORDER:
         if key in payload and not isinstance(payload[key], list):
             raise DomainImportError(f"collection {key!r} must be a list")
+    if "audit" in payload and fmt == PORTABILITY_FORMAT_VERSION:
+        raise DomainImportError("audit collection requires format_version 2")
+    if fmt == PORTABILITY_FORMAT_VERSION_AUDIT and "audit" not in payload:
+        raise DomainImportError("format_version 2 payload must include an audit collection")
+    if "audit" in payload and not isinstance(payload["audit"], list):
+        raise DomainImportError("collection 'audit' must be a list")
+    return fmt
+
+
+def _validate_audit_rows(payload: Mapping[str, Any]) -> tuple[AuditEvent, ...]:
+    """Strictly validate the ``audit`` collection, returning reconstructed events.
+
+    Every row is rebuilt through :func:`audit.make_event` with all fields
+    taken from the row, so ``AuditEvent.__post_init__`` enforces the closed
+    enums (``surface`` ∈ :data:`AUDIT_SURFACES`, ``actor_kind`` ∈
+    {system,user,service}) and non-blank fields before anything is written —
+    the no-event-injection gate. Raises :class:`DomainImportError` naming the
+    offending row index and field.
+    """
+
+    raw = payload.get("audit", [])
+    events: list[AuditEvent] = []
+    for index, row in enumerate(raw):
+        if not isinstance(row, dict):
+            raise DomainImportError(f"audit row {index} must be a JSON object")
+        if not isinstance(row.get("ts"), (int, float)):
+            raise DomainImportError(f"audit row {index}: field 'ts' must be a number")
+        if row.get("before") is not None and not isinstance(row.get("before"), dict):
+            raise DomainImportError(f"audit row {index}: field 'before' must be null or an object")
+        if row.get("after") is not None and not isinstance(row.get("after"), dict):
+            raise DomainImportError(f"audit row {index}: field 'after' must be null or an object")
+        if row.get("metadata") is not None and not isinstance(row.get("metadata"), dict):
+            raise DomainImportError(f"audit row {index}: field 'metadata' must be an object")
+        try:
+            event = make_event(
+                event_id=row["event_id"],
+                ts=row["ts"],
+                actor=row["actor"],
+                actor_kind=row["actor_kind"],
+                surface=row["surface"],
+                entity_kind=row["entity_kind"],
+                entity_id=row["entity_id"],
+                action=row["action"],
+                before=row.get("before"),
+                after=row.get("after"),
+                metadata=row.get("metadata"),
+            )
+        except KeyError as exc:
+            raise DomainImportError(
+                f"audit row {index}: missing required field {exc.args[0]!r}"
+            ) from exc
+        except ValueError as exc:
+            raise DomainImportError(f"audit row {index}: {exc}") from exc
+        events.append(event)
+    return tuple(events)
+
+
+def _validate_audit_sink(store: DomainStore, events: tuple[AuditEvent, ...]) -> None:
+    """Enforce the import's audit pre-conditions before anything is written.
+
+    1. A payload carrying audit rows requires a wired sink — restoring them
+       into a store with no sink would silently drop them.
+    2. All-or-nothing ``event_id`` conflict pre-check: any payload event_id
+       already present in the sink aborts the whole import (domain rows
+       included) before any INSERT.
+    """
+
+    if not events:
+        return
+    sink = getattr(store, "audit_sink", None)
+    if sink is None:
+        raise DomainImportError(
+            "payload contains audit rows but no audit sink configured; "
+            "pass --audit-log or set INNERWORK_AUDIT_DB"
+        )
+    existing = {event.event_id for event in sink.query()}
+    for event in events:
+        if event.event_id in existing:
+            raise DomainImportError(
+                f"audit event_id {event.event_id} already exists in the audit sink"
+            )
 
 
 def _validate_fresh_target(store: DomainStore) -> None:
