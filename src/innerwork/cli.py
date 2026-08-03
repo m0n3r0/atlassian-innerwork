@@ -27,7 +27,7 @@ from .markdown_importer import MarkdownImportError, import_markdown_tree
 from .migrators import build_synthetic_fixture, load_synthetic_fixture
 from .portability import (
     DomainImportError,
-    export_domain_json,
+    export_domain_json_stream,
     import_domain,
     import_domain_json,
 )
@@ -153,6 +153,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Path to the SQLite audit DB to wire as the store's audit sink "
             "(env: INNERWORK_AUDIT_DB)"
+        ),
+    )
+    export_cmd.add_argument(
+        "--progress",
+        action="store_true",
+        help=(
+            "Print progress lines to stderr (collection boundaries, every "
+            "100,000 rows within a collection, and a final summary); "
+            "lines contain only collection names and counts, never row content"
         ),
     )
 
@@ -380,6 +389,47 @@ def _wire_audit_sink(store: DomainStore, args: argparse.Namespace) -> None:
         store.audit_sink = SqliteAuditSink(path)
 
 
+class _ExportProgress:
+    """Throttle streaming-export progress into the documented stderr cadence.
+
+    One line at each collection start, then every 100,000 rows within a
+    collection, then one line at each collection completion and one final
+    line. Lines contain only constant collection names and integers —
+    never row content (SEC gate, scoping doc §2). ``finish`` emits the
+    last collection's completion line plus the final summary.
+    """
+
+    def __init__(self) -> None:
+        self._current: str | None = None
+        self._counts: dict[str, int] = {}
+        self._printed: dict[str, int] = {}
+
+    def __call__(self, collection: str, cumulative: int) -> None:
+        if self._current is not None and collection != self._current:
+            sys.stderr.write(
+                f"export: {self._current} done ({self._counts[self._current]} rows)\n"
+            )
+        if collection != self._current:
+            self._current = collection
+            self._counts[collection] = cumulative
+            self._printed[collection] = 0
+            sys.stderr.write(f"export: {collection} 0 rows...\n")
+        self._counts[collection] = cumulative
+        if cumulative - self._printed[collection] >= 100_000:
+            sys.stderr.write(f"export: {collection} {cumulative} rows...\n")
+            self._printed[collection] = cumulative
+
+    def finish(self, counts: dict[str, int]) -> None:
+        if self._current is not None:
+            sys.stderr.write(
+                f"export: {self._current} done ({counts[self._current]} rows)\n"
+            )
+        total = sum(counts.values())
+        sys.stderr.write(
+            f"export: done ({total} rows across {len(counts)} collections)\n"
+        )
+
+
 def _domain_dispatch(args: argparse.Namespace) -> int:
     store = DomainStore(_resolve_database_url(args))
     _wire_audit_sink(store, args)
@@ -445,22 +495,43 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
         _print_json({"work_item": item.to_dict(), "transition": transition.to_dict()})
         return 0
     if args.command == "export":
+        out_path: Path | None = getattr(args, "out", None)
+        progress = _ExportProgress() if getattr(args, "progress", False) else None
         try:
-            payload = export_domain_json(
-                store,
-                indent=2,
-                include_audit=getattr(args, "include_audit", False),
-            )
+            if out_path is not None:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = out_path.parent / (out_path.name + f".tmp{os.getpid()}")
+                try:
+                    with tmp_path.open("w", encoding="utf-8") as fh:
+                        counts = export_domain_json_stream(
+                            store,
+                            fh,
+                            indent=2,
+                            include_audit=getattr(args, "include_audit", False),
+                            progress=progress,
+                        )
+                        fh.write("\n")
+                    os.replace(tmp_path, out_path)
+                except BaseException:
+                    tmp_path.unlink(missing_ok=True)
+                    raise
+            else:
+                counts = export_domain_json_stream(
+                    store,
+                    sys.stdout,
+                    indent=2,
+                    include_audit=getattr(args, "include_audit", False),
+                    progress=progress,
+                )
+                sys.stdout.write("\n")
+            if progress is not None:
+                progress.finish(counts)
         except DomainImportError as exc:
             sys.stderr.write(f"error: {exc}\n")
             raise SystemExit(2) from exc
-        out_path: Path | None = getattr(args, "out", None)
-        if out_path is not None:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(payload + "\n", encoding="utf-8")
-            return 0
-        sys.stdout.write(payload)
-        sys.stdout.write("\n")
+        except OSError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(2) from exc
         return 0
     if args.command == "import":
         try:
