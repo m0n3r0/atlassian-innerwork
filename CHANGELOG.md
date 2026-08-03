@@ -6,6 +6,10 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+### Fixed
+
+- `scripts/check_anti_hallucination.py` — skip `.worktrees/` when scanning. Git worktree checkouts of the repo were being scanned as part of the tree, causing the guardrail to false-positive on the allowlisted `docs/threat-model.md` (and the script/test files) under their worktree paths. CI was unaffected (fresh checkouts have no worktrees); local runs with linked worktrees now pass.
+
 ### Added — Phase 10 (beta, migration, launch, post-launch iteration)
 
 - `docs/launch-plan.md` — public-beta launch plan: scope, sequencing, communications channels (GitHub issues + private vulnerability reporting only), success signals tied to issue/PR throughput rather than user counts, and explicit non-goals (no PyPI publish, no `v*` tag, no commercial commitments).

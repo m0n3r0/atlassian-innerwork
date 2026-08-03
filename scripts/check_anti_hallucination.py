@@ -56,7 +56,16 @@ SCAN_EXTENSIONS: frozenset[str] = frozenset(
 
 # Directories we skip entirely.
 SKIP_DIRS: frozenset[str] = frozenset(
-    {".git", ".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".ruff_cache"}
+    {
+        ".git",
+        ".venv",
+        ".worktrees",
+        "venv",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        ".ruff_cache",
+    }
 )
 
 
