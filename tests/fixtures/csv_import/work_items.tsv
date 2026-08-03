@@ -1,0 +1,5 @@
+project	project_name	title	status	description	assignee	key
+MARK	Marketing	Q3 campaign brief	done	Write the brief	dana	MARK-2
+MARK		Design landing page	in_progress		erin	MARK-5
+MARK		Schedule social posts	todo	Post schedule	frank	
+DATA	Data	Backfill metrics pipeline	done		grace	

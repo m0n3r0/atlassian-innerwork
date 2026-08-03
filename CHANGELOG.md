@@ -13,6 +13,13 @@ All notable changes to this project are documented here. Format based on [Keep a
 - `tests/test_markdown_importer.py` + `tests/fixtures/markdown_tree/` — 18 tests covering scan mapping, frontmatter handling, fresh-target enforcement, CLI exit codes, and the portability round-trip (import → export → import → export byte-identical).
 - `docs/migration-guide.md` — new §4 documenting `import-markdown` semantics and v1 limits; §1 notes frontmatter is a one-way door (not re-emitted by `export`).
 
+### Added — CSV/TSV importer
+
+- `src/innerwork/csv_importer.py` — `scan_csv_file()` / `import_csv_file()` / `CsvImportError` plus `CsvProject` / `CsvWorkItem` / `CsvImportPlan`. Reads a local CSV/TSV file of work-item rows (stdlib `csv` only, no new dependency, no network) and writes projects/work items directly through `DomainStore` via its own scoped insert path (projects, work_items, `project_sequences` — never `import_domain`). Extension-based delimiter auto-detect with `--delimiter` override (no `csv.Sniffer`), `utf-8-sig` BOM + `newline=""` parsing, locked column aliases and status vocabulary, explicit or auto-allocated keys (`{PROJ}-{n}` starting at the store's `next_sequence`), fresh-target gate on `projects`/`work_items` with `--allow-populated` escape hatch, conflicts always error, dry-run preview that still runs the fresh-target + conflict checks.
+- `src/innerwork/cli.py` — new `import-csv <file>` subcommand with `--database-url`, `--owner` (default `importer`), `--delimiter` (auto/comma/tab), `--dry-run`, and `--allow-populated`; success prints `{"projects", "work_items", "warnings", "dry_run", "delimiter"}` JSON, `CsvImportError`/`OSError` exit 2.
+- `tests/test_csv_importer.py` + `tests/fixtures/csv_import/` — 32 tests covering delimiter detection/override, BOM/CRLF/quoting/blank-line handling, column mapping and status vocabulary, key allocation, within-file and store-level conflict errors, fresh-target enforcement, `--allow-populated`, CLI exit codes, and the portability round-trip (import → export → import → export byte-identical).
+- `docs/migration-guide.md` — new §5 documenting `import-csv` semantics and v1 limits; §1 notes CSV column provenance (`type` values) is a one-way door (not re-emitted by `export`).
+
 ### Fixed
 
 - `scripts/check_anti_hallucination.py` — skip `.worktrees/` when scanning. Git worktree checkouts of the repo were being scanned as part of the tree, causing the guardrail to false-positive on the allowlisted `docs/threat-model.md` (and the script/test files) under their worktree paths. CI was unaffected (fresh checkouts have no worktrees); local runs with linked worktrees now pass.

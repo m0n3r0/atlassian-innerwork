@@ -1,6 +1,6 @@
 # Migration Guide
 
-Status: Phase 10 — synthetic-fixture round-trip plus the markdown-tree importer (`import-markdown`).
+Status: Phase 10 — synthetic-fixture round-trip plus the markdown-tree importer (`import-markdown`) and the CSV/TSV importer (`import-csv`).
 
 This guide explains the migration surface that `innerwork` ships in
 Phase 10. The goals are:
@@ -64,6 +64,12 @@ What is **not** in the portable surface (by design):
   `title` / `body` / `author` / `created_at` per `PageVersion`. The
   frontmatter envelope is a one-way door — a re-export never re-emits
   it, so operators should not expect byte-identical `.md` files back.
+- CSV column provenance: `innerwork import-csv` consumes column names
+  and `type` values at import time (see §5), but `export` emits only
+  the domain fields (`key`, `title`, `description`, `state`,
+  `assignee`, timestamps). The original column names and `type` values
+  are a one-way door — a re-export never re-emits them, so operators
+  should not expect byte-identical `.csv` files back.
 
 ---
 
@@ -250,7 +256,137 @@ round-trip returns page content, not byte-identical `.md` files.
 
 ---
 
-## 5. Failure modes and recovery
+## 5. CSV/TSV importer
+
+`innerwork import-csv` reads a local CSV or TSV file of **work-item
+rows** and writes it into the `projects` / `work_items` collections
+**directly through the domain store** — it does not produce a
+portability envelope and never calls `import-domain`. The `projects`
+collection is derived from the distinct `project` column values; there
+are no separate project rows. Input is purely local files; the command
+makes no network access.
+
+### 5.1 Command
+
+```
+innerwork import-csv <file> --database-url sqlite:///path/to/fresh.db [--owner NAME] [--delimiter auto|comma|tab] [--dry-run] [--allow-populated]
+```
+
+- `<file>` — the CSV/TSV file to import. Must be an existing file;
+  otherwise the command prints an error and exits 2.
+- `--owner` — owner identifier for imported projects. Defaults to
+  `importer`.
+- `--delimiter` — `auto` (default), `comma`, or `tab`. `auto` picks the
+  delimiter by extension: `.tsv` → tab, anything else → comma. There is
+  no heuristic sniffing; the resolved delimiter is echoed in the
+  summary JSON.
+- `--dry-run` — parse, validate, and run the fresh-target and conflict
+  checks without writing anything, so the summary is an honest preview
+  of a real import.
+- `--allow-populated` — skip the fresh-target check and import into a
+  store that already has projects / work items. Existing rows are never
+  modified; conflicting rows still error (see §5.4).
+- Success prints a JSON summary to stdout:
+  `{"projects": N, "work_items": N, "warnings": [...], "dry_run": false, "delimiter": "comma"}`.
+
+### 5.2 Column mapping
+
+Header cells are matched case-insensitively and whitespace-trimmed
+(`"Project"` and `" project "` both map to `project`). Two headers
+normalizing to the same name are an error listing both. Unknown columns
+do **not** abort the import — they produce one warning listing the
+unknown column names (sorted) and are otherwise ignored.
+
+| Canonical column | Accepted aliases | Required | Target field | Rules |
+|---|---|---|---|---|
+| `project` | `project_key`, `project key` | required | `Project.key` | Sanitized per §5.3; determines project membership/creation. |
+| `project_name` | `project name` | optional | `Project.name` | Used only when the project is **newly created**; ignored (with a warning) when the project already exists under `--allow-populated`. |
+| `title` | `summary` | required | `WorkItem.title` | Stripped; non-blank; ≤ 200 characters. |
+| `status` | `state` | optional | `WorkItem.state` | Default `todo`; vocabulary mapping below. Unknown value → error naming the row, the value, and the allowed set. |
+| `type` | `work_item_type`, `issue type` | optional | — (no field) | **Recognized but unmappable**: the domain model has no work-item type field. Dropped, with one warning total. |
+| `description` | `desc` | optional | `WorkItem.description` | ≤ 4000 characters; blank → `""`. |
+| `assignee` | — | optional | `WorkItem.assignee` | Blank → `""`; non-blank stored verbatim. |
+| `key` | `work_item_key` | optional | `WorkItem.key` | Explicit key; must match `^[A-Z][A-Z0-9]{1,9}-\d+$` and its prefix must equal the sanitized project key. |
+
+The `status` cell is normalized (strip + lowercase + collapse internal
+whitespace) and mapped:
+
+| Normalized value | Maps to |
+|---|---|
+| `todo`, `backlog`, `open`, `to do`, `to-do` | `todo` |
+| `in_progress`, `in progress`, `wip`, `doing`, `inprogress` | `in_progress` |
+| `done`, `closed`, `complete`, `completed`, `resolved` | `done` |
+
+### 5.3 Keys and project derivation
+
+- **Project keys** are sanitized from the `project` cell: uppercase,
+  drop every character outside `[A-Z0-9]`, then require the result to
+  match `^[A-Z][A-Z0-9]{1,9}$` (2–10 uppercase characters starting with
+  a letter). Invalid results are an **error** naming the value — keys
+  are never silently truncated. Two distinct values sanitizing to the
+  same key are an error listing both. The project name is the first
+  non-blank `project_name` cell for that project (file order), else the
+  verbatim `project` cell of the project's first row.
+- **Work-item keys** are explicit (from the `key` column) or
+  auto-allocated. Explicit keys are used verbatim and validated (format
+  + prefix). Auto keys are `{PROJ}-{n}` in the importer's deterministic
+  file order, where `n` starts at the project's current
+  `next_sequence` (1 on a fresh store) and advances past every used
+  suffix — an auto row before an explicit `ENG-5` row gets `ENG-1` and
+  the explicit row keeps `ENG-5`.
+- After the import, `project_sequences` is bumped incrementally for the
+  projects in the file (`next_sequence = max(current, max_used) + 1`),
+  so a later `work-item-create` never collides and projects not in the
+  file are left untouched.
+
+### 5.4 Fresh-target, conflicts, and `--allow-populated`
+
+- **Fresh-target requirement.** The command refuses to run when the
+  `projects` or `work_items` tables already contain rows (exit 2,
+  nothing written) — unless `--allow-populated` is passed. Only the two
+  collections the importer touches gate; spaces / pages / links /
+  comments may exist and are untouched. The check runs in `--dry-run`
+  too, so the preview is honest.
+- **Conflicts always error** (nothing is written; there is no silent
+  skip):
+  - An explicit `key` that already exists in `work_items` → error
+    naming the key and the row.
+  - A row without an explicit key whose natural key `(project, title)`
+    already exists → error naming the row, the title, and the existing
+    work item's key. Re-importing the same CSV into the same store
+    therefore always fails loudly instead of silently duplicating rows.
+  - Two rows in one file with the same explicit key → error naming both
+    rows.
+- Under `--allow-populated`, existing rows are immutable: a non-blank
+  `project_name` for an existing project is ignored with a warning.
+
+### 5.5 Round-trip posture
+
+`import-csv → export → import` preserves the imported *content*: keys,
+titles, descriptions, states, assignees, and project names round-trip
+through the portability envelope without loss (the round-trip gate
+asserts byte-identical re-exports). CSV column provenance itself is a
+**one-way door** — the original column names and `type` values are
+consumed at import time and never re-emitted by `export`, so the
+round-trip returns domain content, not byte-identical `.csv` files.
+
+### 5.6 Limits (v1)
+
+- No transition history is synthesized: `state` is taken verbatim from
+  the file (a CSV row is a snapshot, not an event log).
+- Work-item `type` is dropped with a warning (the domain model has no
+  type field); operators with type data must encode it in
+  `title`/`description` or wait for a model change.
+- Project `visibility` / `members` default to `internal` / `()` — there
+  are no CSV columns for them in v1.
+- Links, comments, spaces, and pages are never created.
+- The importer creates only `projects` / `work_items` (plus the
+  `project_sequences` bookkeeping rows); it never creates spaces,
+  pages, links, or comments.
+
+---
+
+## 6. Failure modes and recovery
 
 | Failure | Cause | Recovery |
 |---|---|---|
@@ -268,7 +404,7 @@ disposable.
 
 ---
 
-## 6. Synthetic fixture contract
+## 7. Synthetic fixture contract
 
 The synthetic fixture lives at `tests/fixtures/synthetic_migration.json`
 and is loaded both by:
@@ -293,7 +429,7 @@ Fixture rules:
 
 ---
 
-## 7. What this guide is NOT
+## 8. What this guide is NOT
 
 - It is **not** a guide for migrating from hosted Jira or Confluence.
   Phase 10 ships no such importer. The roadmap document lists this as a
@@ -308,7 +444,7 @@ Fixture rules:
 
 ---
 
-## 8. Cross-references
+## 9. Cross-references
 
 - `docs/launch-plan.md`
 - `docs/beta-program.md`
