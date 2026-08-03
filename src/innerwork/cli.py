@@ -11,6 +11,7 @@ from typing import Any
 import yaml
 
 from .analytics import domain_rollup
+from .audit import SqliteAuditSink
 from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
 from .control_plane import ControlPlane
@@ -77,11 +78,24 @@ def build_parser() -> argparse.ArgumentParser:
             help="SQLite URL, e.g. sqlite:///.innerwork/innerwork.db (env: INNERWORK_DATABASE_URL)",
         )
 
+    def _add_audit_log_arg(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--audit-log",
+            type=Path,
+            help=(
+                "Path to the SQLite audit DB to wire as the store's audit sink "
+                "(env: INNERWORK_AUDIT_DB); enables audit emission for writes "
+                "and audit export/import"
+            ),
+        )
+
     projects_list = subcommands.add_parser("projects", help="List work-graph projects (JSON)")
     _add_db_arg(projects_list)
+    _add_audit_log_arg(projects_list)
 
     project_create = subcommands.add_parser("project-create", help="Create a work-graph project")
     _add_db_arg(project_create)
+    _add_audit_log_arg(project_create)
     project_create.add_argument("--key", required=True, help="Project key, uppercase, e.g. ENG")
     project_create.add_argument("--name", required=True, help="Project display name")
     project_create.add_argument("--owner", required=True, help="Project owner identifier")
@@ -90,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
         "work-items", help="List work items (JSON), optionally filtered by project/state"
     )
     _add_db_arg(work_items_list)
+    _add_audit_log_arg(work_items_list)
     work_items_list.add_argument("--project-id", help="Filter by project_id")
     work_items_list.add_argument("--state", help="Filter by workflow state")
 
@@ -97,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
         "work-item-create", help="Create a work item under a project"
     )
     _add_db_arg(work_item_create)
+    _add_audit_log_arg(work_item_create)
     work_item_create.add_argument("--project-id", required=True)
     work_item_create.add_argument("--title", required=True)
     work_item_create.add_argument("--description", default="")
@@ -106,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
         "work-item-transition", help="Transition a work item to a new state"
     )
     _add_db_arg(work_item_transition)
+    _add_audit_log_arg(work_item_transition)
     work_item_transition.add_argument("--work-item-id", required=True)
     work_item_transition.add_argument("--to-state", required=True)
     work_item_transition.add_argument("--actor", required=True)
@@ -122,6 +139,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Write JSON to this path instead of stdout",
     )
+    export_cmd.add_argument(
+        "--include-audit",
+        action="store_true",
+        help=(
+            "Include the store's audit log in the envelope and bump "
+            "format_version to 2 (requires an audit sink; see --audit-log)"
+        ),
+    )
+    export_cmd.add_argument(
+        "--audit-log",
+        type=Path,
+        help=(
+            "Path to the SQLite audit DB to wire as the store's audit sink "
+            "(env: INNERWORK_AUDIT_DB)"
+        ),
+    )
 
     import_cmd = subcommands.add_parser(
         "import",
@@ -133,12 +166,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to a JSON envelope produced by `innerwork export`",
     )
+    import_cmd.add_argument(
+        "--audit-log",
+        type=Path,
+        help=(
+            "Path to the SQLite audit DB to wire as the store's audit sink "
+            "(env: INNERWORK_AUDIT_DB); required when the payload carries "
+            "audit rows"
+        ),
+    )
 
     migrate_cmd = subcommands.add_parser(
         "migrate",
         help="Run a bundled migration source (Phase 10: synthetic fixture only)",
     )
     _add_db_arg(migrate_cmd)
+    _add_audit_log_arg(migrate_cmd)
     migrate_cmd.add_argument(
         "--source",
         choices=("synthetic",),
@@ -151,12 +194,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the whole-domain analytics rollup as JSON",
     )
     _add_db_arg(metrics_cmd)
+    _add_audit_log_arg(metrics_cmd)
 
     md_importer_cmd = subcommands.add_parser(
         "import-markdown",
         help="Import a directory tree of markdown files into spaces/pages",
     )
     _add_db_arg(md_importer_cmd)
+    _add_audit_log_arg(md_importer_cmd)
     md_importer_cmd.add_argument(
         "dir",
         type=Path,
@@ -181,6 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Import a CSV/TSV file of work-item rows into projects and work items",
     )
     _add_db_arg(csv_importer_cmd)
+    _add_audit_log_arg(csv_importer_cmd)
     csv_importer_cmd.add_argument(
         "file",
         type=Path,
@@ -319,8 +365,24 @@ def _resolve_database_url(args: argparse.Namespace) -> Path:
     return Path(raw[len(prefix) :])
 
 
+def _wire_audit_sink(store: DomainStore, args: argparse.Namespace) -> None:
+    """Wire ``store.audit_sink`` from ``--audit-log`` / ``INNERWORK_AUDIT_DB``.
+
+    Resolved once per invocation: the explicit flag wins over the env
+    fallback. Wiring happens BEFORE any domain work so CLI writes emit audit
+    rows (audit finding F1 fix) and ``export --include-audit`` / v2 imports
+    have a real sink to read from / restore into. Commands without an
+    ``--audit-log`` argument still honor the env fallback.
+    """
+
+    path = getattr(args, "audit_log", None) or os.environ.get("INNERWORK_AUDIT_DB")
+    if path:
+        store.audit_sink = SqliteAuditSink(path)
+
+
 def _domain_dispatch(args: argparse.Namespace) -> int:
     store = DomainStore(_resolve_database_url(args))
+    _wire_audit_sink(store, args)
     import uuid
 
     if args.command == "projects":
@@ -383,7 +445,15 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
         _print_json({"work_item": item.to_dict(), "transition": transition.to_dict()})
         return 0
     if args.command == "export":
-        payload = export_domain_json(store, indent=2)
+        try:
+            payload = export_domain_json(
+                store,
+                indent=2,
+                include_audit=getattr(args, "include_audit", False),
+            )
+        except DomainImportError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(2) from exc
         out_path: Path | None = getattr(args, "out", None)
         if out_path is not None:
             out_path.parent.mkdir(parents=True, exist_ok=True)

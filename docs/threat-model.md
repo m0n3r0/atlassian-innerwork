@@ -68,7 +68,7 @@ and exercised by tests).
 | **T**ampering with audit log | audit DB | append-only triggers (`RAISE(ABORT)`) on UPDATE/DELETE; documented as soft guard, not a security boundary (DBA can drop triggers) | implemented |
 | **T**ampering with domain DB | sqlite files | filesystem permissions (operator); `chmod 0o600` on backup output | partial |
 | **R**epudiation | audit log | append-only event log covers `jira_workflow`, `confluence_page`, `mention`, `permission_change`, `portability_export`, `portability_import` surfaces | partial (permission_change wiring deferred) |
-| **I**nformation disclosure (PII in exports) | portability export | `field_acl.py` `redact_for` helper + `PRIVACY_FIELDS` constant for downstream serializers | partial (operator must invoke) |
+| **I**nformation disclosure (PII in exports) | portability export | `field_acl.py` `redact_for` helper + `PRIVACY_FIELDS` constant for downstream serializers; `export --include-audit` runs every audit row through `redact_for` with the operator actor kind (default `system` → verbatim; non-system kinds mask `actor`) | partial (operator must invoke) |
 | **I**nformation disclosure (reads) | audit log | read events deliberately NOT logged (cost/noise tradeoff) | by design |
 | **D**enial of service | notify rate limiter | per-user token bucket already in `notify.py` | implemented |
 | **E**levation of privilege | field ACL | flat policy table + `system` actor bypass; default-allow when no policy registered | partial |
@@ -101,6 +101,10 @@ The project ships primitives. The operator must:
 
 1. Wire `DomainStore.audit_sink` and `Notifier.audit_sink` to a real
    `SqliteAuditSink` (or compatible sink) before production traffic.
+   Since the audit-export-flag change, the CLI can do this for you:
+   `innerwork <command> --audit-log <path>` (or the
+   `INNERWORK_AUDIT_DB` env var) wires `store.audit_sink` before any
+   domain work, so CLI writes emit audit rows without code changes.
 2. Set restrictive filesystem permissions on the audit DB.
 3. Run `scripts/backup.py` on a schedule and store output off-host.
 4. Run `scripts/check_anti_hallucination.py` in CI to catch accidental
