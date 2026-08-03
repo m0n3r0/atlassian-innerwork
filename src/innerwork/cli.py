@@ -21,6 +21,7 @@ from .domain_store import (
     ProjectNotFoundError,
     WorkItemNotFoundError,
 )
+from .markdown_importer import MarkdownImportError, import_markdown_tree
 from .migrators import build_synthetic_fixture, load_synthetic_fixture
 from .portability import (
     DomainImportError,
@@ -150,6 +151,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db_arg(metrics_cmd)
 
+    md_importer_cmd = subcommands.add_parser(
+        "import-markdown",
+        help="Import a directory tree of markdown files into spaces/pages",
+    )
+    _add_db_arg(md_importer_cmd)
+    md_importer_cmd.add_argument(
+        "dir",
+        type=Path,
+        help="Root directory of the markdown tree (each immediate subdirectory is a space)",
+    )
+    md_importer_cmd.add_argument(
+        "--author",
+        default="importer",
+        help=(
+            "Default author/owner for imported pages and spaces; "
+            "frontmatter `author` wins per page"
+        ),
+    )
+    md_importer_cmd.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Scan and validate without writing to the store",
+    )
+
     return parser
 
 
@@ -193,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         "import",
         "migrate",
         "metrics",
+        "import-markdown",
     }:
         return _domain_dispatch(args)
     raise AssertionError(f"unhandled command: {args.command}")
@@ -363,6 +389,19 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
         return 0
     if args.command == "metrics":
         _print_json(domain_rollup(store).to_dict())
+        return 0
+    if args.command == "import-markdown":
+        try:
+            summary = import_markdown_tree(
+                store,
+                args.dir,
+                author=args.author,
+                dry_run=args.dry_run,
+            )
+        except (MarkdownImportError, OSError) as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            return 2
+        _print_json(summary)
         return 0
     raise AssertionError(f"unhandled domain command: {args.command}")
 

@@ -6,6 +6,13 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+### Added — Markdown-tree importer
+
+- `src/innerwork/markdown_importer.py` — `scan_markdown_tree()` / `import_markdown_tree()` / `MarkdownImportError`. Walks a directory of `.md` files and writes spaces/pages directly through `DomainStore` (no portability envelope, no new dependency — frontmatter parsed with the already-declared `pyyaml`). Directory → space/page mapping: each immediate subdirectory is a space (key = sanitized uppercase dirname, `^[A-Z][A-Z0-9]{1,9}$`, collisions and invalid keys error), every `.md` file below a space is a page (nested paths flatten into titles), optional YAML frontmatter (`title`/`author`/`created_at`), unknown keys warned, fresh-target requirement enforced, root-level `.md` files rejected.
+- `src/innerwork/cli.py` — new `import-markdown <dir>` subcommand with `--database-url`, `--author` (default `importer`), and `--dry-run`; success prints `{"spaces", "pages", "warnings", "dry_run"}` JSON, `MarkdownImportError`/`OSError` exit 2.
+- `tests/test_markdown_importer.py` + `tests/fixtures/markdown_tree/` — 18 tests covering scan mapping, frontmatter handling, fresh-target enforcement, CLI exit codes, and the portability round-trip (import → export → import → export byte-identical).
+- `docs/migration-guide.md` — new §4 documenting `import-markdown` semantics and v1 limits; §1 notes frontmatter is a one-way door (not re-emitted by `export`).
+
 ### Fixed
 
 - `scripts/check_anti_hallucination.py` — skip `.worktrees/` when scanning. Git worktree checkouts of the repo were being scanned as part of the tree, causing the guardrail to false-positive on the allowlisted `docs/threat-model.md` (and the script/test files) under their worktree paths. CI was unaffected (fresh checkouts have no worktrees); local runs with linked worktrees now pass.
