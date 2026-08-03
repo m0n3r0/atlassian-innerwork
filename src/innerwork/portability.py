@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Iterator, Mapping
+from typing import Any, TextIO
 
 from .audit import AuditEvent, make_event
 from .domain_store import DOMAIN_SCHEMA_VERSION, DomainStore
@@ -31,6 +31,7 @@ __all__ = (
     "DomainImportError",
     "export_domain",
     "export_domain_json",
+    "export_domain_json_stream",
     "import_domain",
     "import_domain_json",
 )
@@ -257,6 +258,272 @@ def export_domain_json(
         ),
     )
     return json.dumps(payload, indent=indent, sort_keys=False)
+
+
+# Streaming mirror of the per-collection SELECTs in export_domain, kept in
+# lockstep with the queries above (the byte-identity referee test in
+# tests/test_portability_stream.py enforces parity — any drift breaks it).
+_STREAM_COLLECTIONS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "projects",
+        "SELECT project_id, key, name, owner, created_at "
+        "FROM projects ORDER BY project_id",
+        ("project_id", "key", "name", "owner", "created_at"),
+    ),
+    (
+        "work_items",
+        "SELECT work_item_id, project_id, key, title, description, "
+        "state, assignee, created_at, updated_at "
+        "FROM work_items ORDER BY work_item_id",
+        (
+            "work_item_id",
+            "project_id",
+            "key",
+            "title",
+            "description",
+            "state",
+            "assignee",
+            "created_at",
+            "updated_at",
+        ),
+    ),
+    (
+        "transitions",
+        "SELECT transition_id, work_item_id, from_state, to_state, "
+        "actor, occurred_at, reason "
+        "FROM work_item_transitions ORDER BY transition_id",
+        (
+            "transition_id",
+            "work_item_id",
+            "from_state",
+            "to_state",
+            "actor",
+            "occurred_at",
+            "reason",
+        ),
+    ),
+    (
+        "spaces",
+        "SELECT space_id, key, name, owner, created_at "
+        "FROM spaces ORDER BY space_id",
+        ("space_id", "key", "name", "owner", "created_at"),
+    ),
+    (
+        "pages",
+        "SELECT page_id, space_id, current_version, created_at, updated_at "
+        "FROM pages ORDER BY page_id",
+        ("page_id", "space_id", "current_version", "created_at", "updated_at"),
+    ),
+    (
+        "page_versions",
+        "SELECT version_id, page_id, version_number, title, body, author, created_at "
+        "FROM page_versions ORDER BY version_id",
+        (
+            "version_id",
+            "page_id",
+            "version_number",
+            "title",
+            "body",
+            "author",
+            "created_at",
+        ),
+    ),
+    (
+        "links",
+        "SELECT link_id, work_item_id, page_id, kind, created_by, created_at "
+        "FROM work_item_page_links ORDER BY link_id",
+        ("link_id", "work_item_id", "page_id", "kind", "created_by", "created_at"),
+    ),
+    (
+        "work_item_comments",
+        "SELECT comment_id, work_item_id, author, body, created_at "
+        "FROM work_item_comments ORDER BY comment_id",
+        ("comment_id", "work_item_id", "author", "body", "created_at"),
+    ),
+    (
+        "page_comments",
+        "SELECT comment_id, page_id, author, body, created_at "
+        "FROM page_comments ORDER BY comment_id",
+        ("comment_id", "page_id", "author", "body", "created_at"),
+    ),
+)
+
+
+def export_domain_json_stream(
+    store: DomainStore,
+    out: TextIO,
+    *,
+    indent: int | None = 2,
+    batch_size: int = 500,
+    include_audit: bool = False,
+    audit_actor_kind: str = "system",
+) -> dict[str, int]:
+    """Write the portability envelope to ``out`` incrementally.
+
+    Byte-identical to ``json.dumps(export_domain(store, include_audit=...,
+    audit_actor_kind=...), indent=indent, sort_keys=False)`` for the same
+    store and settings — the referee gate. Rows are fetched in
+    ``batch_size`` batches via ``fetchmany`` (never ``fetchall``), so peak
+    additional memory is bounded by one batch, not by store size.
+
+    ``out`` is owned by the caller: this function writes and flushes but
+    never closes it. The CLI streams to a temp file for ``--out`` and to
+    stdout otherwise, appending the trailing ``\\n`` after the call.
+    ``_audit_portability`` fires only after the envelope has been fully
+    written (a failed export records no ``portability_export`` event).
+    Returns ``{collection: rows_written}`` — same shape as
+    :func:`import_domain`'s return, ``audit`` included when requested.
+    """
+
+    if batch_size < 1:
+        raise ValueError(f"batch_size must be >= 1, got {batch_size}")
+
+    format_version = (
+        PORTABILITY_FORMAT_VERSION_AUDIT if include_audit else PORTABILITY_FORMAT_VERSION
+    )
+    # Fail-before-write: the audit snapshot (and its sink-missing check)
+    # happens BEFORE the first byte so a missing sink leaves ``out`` empty.
+    audit_rows = _export_audit_rows(store, audit_actor_kind) if include_audit else None
+    collection_keys = _COLLECTION_ORDER + (("audit",) if include_audit else ())
+    counts: dict[str, int] = {}
+
+    if indent is None:
+        pad = ""
+        out.write("{")
+        out.write(f'"format_version": {format_version}, ')
+        out.write(f'"schema_version": {DOMAIN_SCHEMA_VERSION}, ')
+    else:
+        pad = " " * indent
+        out.write("{")
+        out.write(f'\n{pad}"format_version": {format_version},')
+        out.write(f'\n{pad}"schema_version": {DOMAIN_SCHEMA_VERSION},')
+
+    with store._connect() as connection:  # noqa: SLF001 — portability owns the schema
+        for index, key in enumerate(collection_keys):
+            last = index == len(collection_keys) - 1
+            if indent is None:
+                out.write(f'"{key}": ')
+            else:
+                out.write(f'\n{pad}"{key}": ')
+            if key == "audit":
+                count = _write_stream_array(out, iter(audit_rows or ()), indent=indent, key_pad=pad)
+            else:
+                query, columns = _stream_collection_query(key)
+                cursor = connection.execute(query)
+                count = _write_stream_array(
+                    out,
+                    _iter_batched_rows(cursor, columns, batch_size),
+                    indent=indent,
+                    key_pad=pad,
+                )
+            counts[key] = count
+            if not last:
+                out.write(", " if indent is None else ",")
+    out.write("}" if indent is None else "\n}")
+    out.flush()
+
+    _audit_portability(
+        store,
+        action="export",
+        counts=counts,
+        format_version=format_version,
+    )
+    return counts
+
+
+def _stream_collection_query(key: str) -> tuple[str, tuple[str, ...]]:
+    for name, query, columns in _STREAM_COLLECTIONS:
+        if name == key:
+            return query, columns
+    raise KeyError(key)  # pragma: no cover — collection_keys mirrors _COLLECTION_ORDER
+
+
+def _iter_batched_rows(
+    cursor: Any,
+    columns: tuple[str, ...],
+    batch_size: int,
+) -> Iterator[dict[str, Any]]:
+    """Yield row dicts from ``cursor`` in bounded ``fetchmany`` batches."""
+    while True:
+        batch = cursor.fetchmany(batch_size)
+        if not batch:
+            return
+        for raw in batch:
+            yield dict(zip(columns, raw, strict=True))
+
+
+def _write_stream_array(
+    out: TextIO,
+    rows: Iterator[dict[str, Any]],
+    *,
+    indent: int | None,
+    key_pad: str,
+) -> int:
+    """Write one collection value (``[...]`` / ``[]``) for ``rows``.
+
+    Returns the number of rows written. Pretty mode reproduces the
+    ``json.dumps(payload, indent=...)`` grammar exactly: each row is
+    ``json.dumps(row, indent=indent)`` re-indented by ``2 * indent``
+    spaces; compact mode mirrors the default separators ``(', ', ': ')``.
+    """
+    if indent is None:
+        return _write_stream_array_compact(out, rows)
+    return _write_stream_array_pretty(out, rows, indent=indent, key_pad=key_pad)
+
+
+def _write_stream_array_compact(
+    out: TextIO, rows: Iterator[dict[str, Any]]
+) -> int:
+    count = 0
+    first = True
+    for row in rows:
+        if first:
+            out.write("[")
+            out.write(json.dumps(row, ensure_ascii=True, sort_keys=False))
+            first = False
+        else:
+            out.write(", ")
+            out.write(json.dumps(row, ensure_ascii=True, sort_keys=False))
+        count += 1
+    out.write("[]" if first else "]")
+    out.flush()
+    return count
+
+
+def _write_stream_array_pretty(
+    out: TextIO,
+    rows: Iterator[dict[str, Any]],
+    *,
+    indent: int,
+    key_pad: str,
+) -> int:
+    row_pad = " " * (2 * indent)
+    count = 0
+    first = True
+    for row in rows:
+        if first:
+            out.write("[")
+            first = False
+        else:
+            out.write(",")
+        out.write("\n" + row_pad + _reindent_row(row, indent, row_pad))
+        count += 1
+    if first:
+        out.write("[]")
+    else:
+        out.write("\n" + key_pad + "]")
+    out.flush()
+    return count
+
+
+def _reindent_row(row: dict[str, Any], indent: int, row_pad: str) -> str:
+    """``json.dumps(row, indent=indent)`` with every line prefixed by ``row_pad``.
+
+    The caller prepends the leading ``row_pad`` (via ``"\\n" + row_pad``), so
+    this only re-indents the *continuation* lines.
+    """
+    raw = json.dumps(row, indent=indent, ensure_ascii=True, sort_keys=False)
+    return raw.replace("\n", "\n" + row_pad)
 
 
 def _audit_portability(

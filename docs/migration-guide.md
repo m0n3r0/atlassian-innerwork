@@ -81,6 +81,21 @@ Phase 10 adds three subcommands to `innerwork` that wrap the existing
 portability and analytics modules. These commands are thin and
 side-effect-conservative: they never mutate an already-populated store.
 
+> **Streaming + atomic `--out` (post-phase-10).** `innerwork export`
+> writes the portability envelope incrementally (rows are fetched in
+> bounded batches), so very large stores export with
+> bounded memory instead of building the whole payload + JSON string in
+> RAM. When `--out PATH` is given, the CLI streams to a temporary file
+> (`PATH.tmp<pid>`) and `os.replace`s it into place only on success: an
+> existing file at `PATH` is never clobbered by a failed export, and the
+> temp file is removed on every failure path. Without `--out`, the
+> envelope streams to stdout and the CLI appends a single trailing `\n`.
+> The streamed artifact is byte-identical to the memory-resident export
+> for the same store and settings — this is the load-bearing invariant.
+> Caveat: a failed stdout export can leave a *partial* envelope on
+> stdout (there is no atomicity for pipes); treat stdout as authoritative
+> only when the exit code is 0.
+
 ### 2.1 `innerwork export-domain`
 
 ```
@@ -416,6 +431,13 @@ innerwork import <input.json> [--database-url sqlite:///...] [--audit-log PATH]
   --audit-log or set INNERWORK_AUDIT_DB`. Importing a v2 payload with
   audit rows but no sink also exits 2 — silently dropping restored rows
   would violate "without duplication or loss".
+- **Streaming + atomic `--out` (post-phase-10).** The audit-bearing
+  export streams through the same incremental writer as the default
+  export (`export_domain_json_stream`), so `--include-audit` on a large
+  store stays bounded-memory. The sink-missing check above happens
+  BEFORE the first byte is written: on a missing sink the command exits
+  2 with stdout empty and an existing `--out` file left untouched (the
+  temp file is removed, never renamed over the target).
 
 ### 6.2 Format version and envelope
 

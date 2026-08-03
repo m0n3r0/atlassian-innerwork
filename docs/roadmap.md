@@ -55,6 +55,12 @@ suite. They form the stable surface that the beta program exercises.
   exports stay byte-identical. Implemented in `src/innerwork/portability.py`
   / `src/innerwork/cli.py`; documented in `docs/migration-guide.md` §6.
   Post-phase-10 addition.
+- Streaming export (`export_domain_json_stream` + atomic `--out`) —
+  `innerwork export` writes the envelope incrementally in bounded
+  batches (byte-identical to the memory-resident export), and `--out`
+  targets are written atomically via a temp file + `os.replace`.
+  Implemented in `src/innerwork/portability.py` / `src/innerwork/cli.py`;
+  documented in `docs/migration-guide.md` §2/§6. Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -85,8 +91,8 @@ fluid and may change as beta feedback arrives.
 
 ### Portability format
 
-- Consider streaming export for very large stores (the current shape
-  is memory-resident; this has been acceptable through Phase 10).
+- Consider compact (indent=None) streaming export plumbing for
+  pipe-oriented consumers, if demand appears.
 
 ### CLI ergonomics
 

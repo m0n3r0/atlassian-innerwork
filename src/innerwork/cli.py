@@ -27,7 +27,7 @@ from .markdown_importer import MarkdownImportError, import_markdown_tree
 from .migrators import build_synthetic_fixture, load_synthetic_fixture
 from .portability import (
     DomainImportError,
-    export_domain_json,
+    export_domain_json_stream,
     import_domain,
     import_domain_json,
 )
@@ -445,22 +445,38 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
         _print_json({"work_item": item.to_dict(), "transition": transition.to_dict()})
         return 0
     if args.command == "export":
+        out_path: Path | None = getattr(args, "out", None)
         try:
-            payload = export_domain_json(
-                store,
-                indent=2,
-                include_audit=getattr(args, "include_audit", False),
-            )
+            if out_path is not None:
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                tmp_path = out_path.parent / (out_path.name + f".tmp{os.getpid()}")
+                try:
+                    with tmp_path.open("w", encoding="utf-8") as fh:
+                        export_domain_json_stream(
+                            store,
+                            fh,
+                            indent=2,
+                            include_audit=getattr(args, "include_audit", False),
+                        )
+                        fh.write("\n")
+                    os.replace(tmp_path, out_path)
+                except BaseException:
+                    tmp_path.unlink(missing_ok=True)
+                    raise
+            else:
+                export_domain_json_stream(
+                    store,
+                    sys.stdout,
+                    indent=2,
+                    include_audit=getattr(args, "include_audit", False),
+                )
+                sys.stdout.write("\n")
         except DomainImportError as exc:
             sys.stderr.write(f"error: {exc}\n")
             raise SystemExit(2) from exc
-        out_path: Path | None = getattr(args, "out", None)
-        if out_path is not None:
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            out_path.write_text(payload + "\n", encoding="utf-8")
-            return 0
-        sys.stdout.write(payload)
-        sys.stdout.write("\n")
+        except OSError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(2) from exc
         return 0
     if args.command == "import":
         try:
