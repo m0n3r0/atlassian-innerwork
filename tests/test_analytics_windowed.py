@@ -386,6 +386,31 @@ def test_boundary_start_inclusive_end_exclusive(tmp_path: Path) -> None:
     assert windowed.contributors.to_dict() == {"distinct": 1, "by_actor": {"alice": 2}}
 
 
+def test_page_comment_out_of_window_excluded(tmp_path: Path) -> None:
+    """Out-of-window page comments are excluded from contributors."""
+    store = _store(tmp_path)
+    store.create_space(
+        space_id="cs", key="CSP", name="CSp", owner="eml",
+        visibility="public", created_at="2024-01-01T00:00:00Z",
+    )
+    store.create_page(
+        page_id="csp1", space_id="cs", title="P", body="v1", author="eml",
+        created_at="2024-01-01T00:00:00Z",
+    )
+    # Inside the window -> counted.
+    store.create_page_comment(
+        comment_id="pci", page_id="csp1", author="alice", body="in",
+        created_at="2024-01-03T12:00:00Z",
+    )
+    # After the window end -> excluded (half-open [start, end)).
+    store.create_page_comment(
+        comment_id="pco", page_id="csp1", author="bob", body="out",
+        created_at="2024-01-06T12:00:00Z",
+    )
+    windowed = windowed_domain_rollup(store, window_start=W_START, window_end=W_END)
+    assert windowed.contributors.to_dict() == {"distinct": 1, "by_actor": {"alice": 1}}
+
+
 def test_partial_windows(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _seed_hand(store)
@@ -463,6 +488,30 @@ def test_flag_validation_errors(tmp_path: Path) -> None:
         assert r.stdout == "", bad
         assert r.stderr.startswith("error: "), bad
         assert "Traceback" not in r.stderr, bad
+
+
+def test_flag_validation_in_process(tmp_path: Path) -> None:
+    """Malformed / naive / inverted / zero-length windows raise AnalyticsError."""
+    store = _store(tmp_path)
+    _seed_hand(store)
+
+    # Malformed values -> AnalyticsError (never a crash / partial result).
+    for bad in ("not-a-date", "2024-13-99T00:00:00Z", ""):
+        with pytest.raises(AnalyticsError):
+            windowed_domain_rollup(store, window_start=bad, window_end=W_END)
+
+    # Naive (offset-less) values are rejected, even with valid ISO shape.
+    with pytest.raises(AnalyticsError):
+        windowed_domain_rollup(store, window_start="2024-01-03T00:00:00", window_end=W_END)
+
+    # Inverted window (end before start) -> AnalyticsError.
+    with pytest.raises(AnalyticsError):
+        windowed_domain_rollup(store, window_start=W_END, window_end=W_START)
+
+    # Zero-length window (end == start) -> AnalyticsError; empty result never
+    # leaks out with a plausible-looking but wrong window.
+    with pytest.raises(AnalyticsError):
+        windowed_domain_rollup(store, window_start=W_START, window_end=W_START)
 
 
 def test_unparseable_stored_timestamp_loud(tmp_path: Path) -> None:
