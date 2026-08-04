@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .analytics import domain_rollup
+from .analytics import AnalyticsError, domain_rollup, windowed_domain_rollup
 from .audit import SqliteAuditSink
 from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
@@ -204,6 +204,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_db_arg(metrics_cmd)
     _add_audit_log_arg(metrics_cmd)
+    metrics_cmd.add_argument(
+        "--window-start",
+        help=(
+            "ISO-8601 timestamp with a UTC offset (e.g. 2024-01-03T00:00:00Z) "
+            "marking the inclusive start of an optional time-windowed "
+            "aggregation window; requires the offset (naive values rejected)"
+        ),
+    )
+    metrics_cmd.add_argument(
+        "--window-end",
+        help=(
+            "ISO-8601 timestamp with a UTC offset (e.g. 2024-01-05T00:00:00Z) "
+            "marking the exclusive end of an optional time-windowed "
+            "aggregation window; requires the offset (naive values rejected)"
+        ),
+    )
 
     md_importer_cmd = subcommands.add_parser(
         "import-markdown",
@@ -563,7 +579,23 @@ def _domain_dispatch(args: argparse.Namespace) -> int:
         _print_json({"source": args.source, "imported": counts})
         return 0
     if args.command == "metrics":
-        _print_json(domain_rollup(store).to_dict())
+        window_start = getattr(args, "window_start", None)
+        window_end = getattr(args, "window_end", None)
+        if window_start is None and window_end is None:
+            _print_json(domain_rollup(store).to_dict())
+            return 0
+        try:
+            windowed = windowed_domain_rollup(
+                store,
+                window_start=window_start,
+                window_end=window_end,
+            )
+        except AnalyticsError as exc:
+            sys.stderr.write(f"error: {exc}\n")
+            raise SystemExit(2) from exc
+        payload = domain_rollup(store).to_dict()
+        payload["window"] = windowed.to_dict()
+        _print_json(payload)
         return 0
     if args.command == "import-markdown":
         try:
