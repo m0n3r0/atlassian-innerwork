@@ -16,6 +16,7 @@ from .broker import EdgeBroker
 from .catalog import broker_catalog, product_catalog, production_oss_phases
 from .control_plane import ControlPlane
 from .csv_importer import CsvImportError, import_csv_file
+from .doctor import render_human_report, run_doctor
 from .domain import default_workflow
 from .domain_store import (
     DomainStore,
@@ -279,6 +280,52 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip the fresh-target check (conflicting rows still error)",
     )
 
+    # ----- innerwork doctor (read-only database validation) --------------
+    doctor_cmd = subcommands.add_parser(
+        "doctor",
+        help="Validate a database file against the current schema",
+        description=(
+            "Validate a database file against the current schema and "
+            "surface common operator misconfigurations. Read-only: the "
+            "target file is never modified."
+        ),
+        epilog=(
+            "examples:\n"
+            "  innerwork doctor                          validate the configured "
+            "store (INNERWORK_DATABASE_URL)\n"
+            "  innerwork doctor data/innerwork.db        validate a specific "
+            "database file\n"
+            "  innerwork doctor data/innerwork.db --json\n"
+            "  innerwork doctor data/innerwork.db --integrity-check "
+            "--audit-log data/audit.db\n"
+        ),
+    )
+    doctor_cmd.add_argument(
+        "db_path",
+        type=Path,
+        nargs="?",
+        metavar="DB_PATH",
+        help=(
+            "Database file to validate (default: the configured store from "
+            "--database-url / INNERWORK_DATABASE_URL)"
+        ),
+    )
+    _add_db_arg(doctor_cmd)
+    _add_audit_log_arg(doctor_cmd)
+    doctor_cmd.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the machine-readable report as JSON instead of the human report",
+    )
+    doctor_cmd.add_argument(
+        "--integrity-check",
+        action="store_true",
+        help=(
+            "Run PRAGMA integrity_check (scans every page; slow on large "
+            "stores). Off by default."
+        ),
+    )
+
     return parser
 
 
@@ -312,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "workflow":
         _print_json(default_workflow().to_dict())
         return 0
+    if args.command == "doctor":
+        return _doctor_dispatch(args)
     if args.command in {
         "projects",
         "project-create",
@@ -444,6 +493,27 @@ class _ExportProgress:
         sys.stderr.write(
             f"export: done ({total} rows across {len(counts)} collections)\n"
         )
+
+
+def _doctor_dispatch(args: argparse.Namespace) -> int:
+    """Run the read-only ``doctor`` diagnostics on a database file.
+
+    Target resolution: positional ``DB_PATH`` wins; otherwise the standard
+    ``--database-url`` / ``INNERWORK_DATABASE_URL`` resolver runs (its
+    ``SystemExit(2)`` propagates: stderr message + empty stdout). Exit 1
+    on any error or warning finding, else 0.
+    """
+
+    path = _resolve_database_url(args) if args.db_path is None else args.db_path
+    audit_path = getattr(args, "audit_log", None) or os.environ.get(
+        "INNERWORK_AUDIT_DB"
+    )
+    report = run_doctor(path, integrity_check=args.integrity_check, audit_path=audit_path)
+    if args.json:
+        _print_json(report.to_dict())
+    else:
+        sys.stdout.write(render_human_report(report))
+    return report.exit_code
 
 
 def _domain_dispatch(args: argparse.Namespace) -> int:

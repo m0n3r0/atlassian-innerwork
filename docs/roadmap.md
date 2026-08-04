@@ -87,6 +87,14 @@ suite. They form the stable surface that the beta program exercises.
   rollup) with an honest tradeoff table. No exporter ships — the shapes
   are operator-side recommendations, labeled as such. Docs-only: no new
   code. Post-phase-10 addition.
+- `innerwork doctor` (`innerwork doctor [DB_PATH] [--database-url ...]
+  [--audit-log ...] [--json] [--integrity-check]`) — read-only
+  validation of a database file against the current schema plus common
+  operator misconfigurations (schema version drift, missing
+  tables/columns/indexes, read-only files, disk space, backup age,
+  audit-database shape). Implemented in `src/innerwork/doctor.py` /
+  `src/innerwork/cli.py`; documented in `docs/migration-guide.md` §2.5.
+  Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -112,8 +120,6 @@ fluid and may change as beta feedback arrives.
 
 ### CLI ergonomics
 
-- `innerwork doctor` to validate a database file against the current
-  schema and surface common operator misconfigurations.
 - Friendlier `--help` examples on the migration commands.
 - Optional shell completion (bash, zsh, fish) emitted by a hidden
   CLI subcommand.

@@ -168,6 +168,110 @@ innerwork metrics --db <path/to/domain.db> [--principal <name>]
   domain (back-compat with internal callers).
 - The output schema is documented in `docs/metrics-dashboard.md`.
 
+### 2.5 `innerwork doctor`
+
+`innerwork doctor` validates a database file against the current schema
+and surfaces common operator misconfigurations (schema version drift,
+missing tables/columns/indexes, read-only files, disk space, backup age,
+audit-database shape). It is **read-only**: every connection opens with
+`mode=ro`, the store/state-store/audit-sink classes are never constructed
+(their constructors write DDL), and no write-adjacent PRAGMA
+(`journal_mode` / `vacuum` / `reindex`) is issued.
+
+Command shape:
+
+```sh
+innerwork doctor [DB_PATH] [--database-url sqlite:///...] [--audit-log PATH] [--json] [--integrity-check]
+```
+
+Target resolution precedence: `DB_PATH` positional → `--database-url` →
+`INNERWORK_DATABASE_URL`. If none resolves, or the URL scheme is
+unsupported, the message goes to stderr and the command exits **2** with
+empty stdout (identical to `export`/`import` usage failures).
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | healthy — zero findings at error **and** warning severity (info allowed) |
+| 1 | findings — at least one error or warning (report/JSON distinguish severity) |
+| 2 | usage / cannot run — no target resolvable or unsupported scheme (stderr only, empty stdout) |
+
+Warnings deliberately affect the exit code: the roadmap contract is
+"0 = healthy, non-zero = issues found". Automation that tolerates warnings
+should use `--json` and test `counts.error == 0`.
+
+`--json` prints exactly one object (same `_print_json` shape as every
+other CLI command — `sort_keys=True`, `indent=2`, byte-stable). Documented
+stable shape:
+
+```json
+{
+  "ok": true,
+  "exit_code": 0,
+  "target": {"path": "...", "exists": true, "size_bytes": 40960, "mtime": "...", "age_days": 12.3},
+  "schema_versions": {"domain": {"expected": 4, "found": "4", "ok": true}, "broker": {"expected": 1, "found": null, "ok": true}},
+  "checks": [{"id": "...", "severity": "warning", "ok": false, "message": "..."}],
+  "counts": {"error": 0, "warning": 1, "info": 2},
+  "summary": "1 warning, 0 errors, 2 info"
+}
+```
+
+Contract rules (each enforced by the test suite):
+
+1. `checks` is an array in check order (target → schema → audit); each
+   entry is `{"id", "severity", "ok", "message"}` with
+   `severity ∈ {"error","warning","info"}`; `ok` is `false` exactly for
+   error/warning findings and `true` for info entries.
+   `schema.audit_skipped` (info) is always present when no audit path
+   resolves.
+2. `counts` counts findings by severity; `summary` is the same sentence
+   the human report prints last.
+3. `ok` = `counts.error == 0`; `exit_code` mirrors the process exit code.
+4. `target` keys are always present; `size_bytes` / `mtime` / `age_days`
+   are `null` when the path does not exist. `path` is the resolved
+   absolute path.
+5. Exit 2 produces **no JSON** — automation must treat a missing payload
+   + exit 2 as "could not run", never as "healthy".
+
+Check summary: target/file checks (`target.exists`, `target.readable`,
+`target.sqlite_header`, `target.openable`, `target.writable`,
+`target.disk_space`, `target.age`; opt-in `target.integrity`), schema
+checks (`schema.domain_version`, `schema.table.*`, `schema.columns.*`,
+`schema.index.*`, `schema.broker_scope`, `schema.broker_columns.*`,
+`schema.broker_version`), and audit checks (`schema.audit_skipped`,
+`schema.audit_target`, `schema.audit_log_table`, `schema.audit_columns`,
+`schema.audit_triggers`, `schema.audit_indexes`).
+
+`--integrity-check` runs `PRAGMA integrity_check` — a full page scan,
+slow on large stores, off by default; without the flag the report never
+claims integrity was verified. `--audit-log` (or `INNERWORK_AUDIT_DB`)
+additionally validates the audit database (table, columns, append-only
+triggers, indexes); without it the report says so with a single
+`INFO schema.audit_skipped` line.
+
+Read-only guarantee and honest edges: opening a non-WAL store with
+`mode=ro` creates no `-wal`/`-shm`/`-journal` sidecar files. A store
+left in WAL mode with its `-wal`/`-shm` files deleted fails
+`target.openable` with a clear message — that is a real operator
+misconfiguration the doctor surfaces, not a bug. Corruption beyond the
+file header is detected only when the open fails or `--integrity-check`
+runs (SQLite reads pages lazily; mid-file bitrot can be invisible to a
+header read).
+
+Example:
+
+```sh
+$ innerwork doctor data/innerwork.db
+INFO  [target.age] database file is 12.3 days old; confirm backups are fresh (docs/operations-runbook.md)
+WARN  [schema.index.ix_work_items_project] index 'ix_work_items_project' is missing (performance)
+INFO  [schema.audit_skipped] no audit database configured (set --audit-log or INNERWORK_AUDIT_DB)
+1 warning, 0 errors, 2 info
+```
+
+A healthy database prints a single `OK: database is healthy (0 warnings,
+0 errors)` line and exits 0.
+
 ---
 
 ## 3. Recommended round-trip procedure

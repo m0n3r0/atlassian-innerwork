@@ -102,6 +102,54 @@ All notable changes to this project are documented here. Format based on [Keep a
   navigation and the Operations IA bucket.
 - Docs-only: no new dependencies, no code changes, no version bump.
 
+### Added — `innerwork doctor`
+
+- `src/innerwork/doctor.py` (new) — read-only database validation.
+  `run_doctor(path, *, integrity_check=False, audit_path=None)` runs the
+  check catalog in stable order: target/file checks (`target.exists`,
+  `target.readable`, `target.sqlite_header`, `target.openable`,
+  `target.writable`, `target.disk_space`, `target.age`; opt-in
+  `target.integrity`), schema checks (`schema.domain_version`, the 11
+  domain tables, their columns, the 8 domain indexes, broker
+  scope/columns/version), and audit checks (table, columns, append-only
+  triggers, indexes). Pure stdlib (`sqlite3` + `os`/`stat`/`shutil`/
+  `time`/`datetime`/`dataclasses`/`pathlib`/`typing`); every connection
+  opens `file:...?mode=ro`; the write-capable store/audit-sink classes
+  are never constructed; no DDL/DML and no write-adjacent PRAGMA.
+  `PRAGMA integrity_check` runs only under `--integrity-check` (full page
+  scan, off by default — the report never claims integrity was verified
+  without the flag).
+- `src/innerwork/cli.py` — new `innerwork doctor [DB_PATH]
+  [--database-url ...] [--audit-log ...] [--json] [--integrity-check]`
+  subcommand with a help epilog of examples. Target resolution:
+  `DB_PATH` → `--database-url` → `INNERWORK_DATABASE_URL`; none or an
+  unsupported scheme → stderr + exit 2 with empty stdout (same contract
+  as `export`/`import`). Exit 0 = no error or warning findings, 1 = any
+  error or warning (warnings deliberately fail — roadmap contract), 2 =
+  usage. Human report to stdout (findings as `SEVERITY [check.id]
+  message`; healthy → single `OK:` line); `--json` prints the documented
+  stable object via the standard `_print_json` shape.
+- `tests/test_doctor.py` (new) — 31 tests: the exit-code matrix (0/1/2
+  with empty stdout on 2), help epilog examples, JSON shape +
+  byte-stability + human/JSON parity, the read-only guarantee
+  (sha256/mtime/size/dir listing unchanged, incl. `--integrity-check`
+  runs), opt-in integrity detection, schema drift (version/table/
+  column/index/broker), audit checks, disk-space + permission cases
+  (root-skipped), a stdlib-imports-only guard on the doctor module, and
+  the drift-guard test that keeps the `EXPECTED_*` mirrors honest
+  against the real store DDL.
+- `docs/migration-guide.md` — new §2.5 documenting the command,
+  exit-code contract, `--json` shape, read-only guarantee, and the
+  honest edges (WAL without its sidecar files fails `target.openable`;
+  corruption beyond the header requires `--integrity-check`).
+- `docs/operations-runbook.md` — the "there is no `innerwork doctor`
+  command" line is replaced with a pointer to the new command; the
+  Restore-verification recipe gains `innerwork doctor <db>` as an
+  explicit validation step.
+- `docs/roadmap.md` — the `innerwork doctor` bullet moves from
+  "Directional next → CLI ergonomics" to "Shipped through Phase 10" as a
+  post-phase-10 addition.
+
 ### Fixed
 
 - `scripts/check_anti_hallucination.py` — skip `.worktrees/` when scanning. Git worktree checkouts of the repo were being scanned as part of the tree, causing the guardrail to false-positive on the allowlisted `docs/threat-model.md` (and the script/test files) under their worktree paths. CI was unaffected (fresh checkouts have no worktrees); local runs with linked worktrees now pass.
