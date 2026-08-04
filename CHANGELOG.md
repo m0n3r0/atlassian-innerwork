@@ -6,6 +6,15 @@ All notable changes to this project are documented here. Format based on [Keep a
 
 ## [Unreleased]
 
+### Added — CLI ergonomics (help examples + shell completion)
+
+- `src/innerwork/cli.py` — the five migration commands (`export`, `import`, `migrate`, `import-markdown`, `import-csv`) now ship parse-validated `--help` examples under an `examples:` block (real flags and fixture/convention paths only; every example is verified by the test suite to parse through `build_parser()` — the anti-hallucination gate). Those five subparsers plus `doctor` switch to `argparse.RawDescriptionHelpFormatter`, so examples render on separate lines (the old `doctor` epilog rendered as a run-on paragraph).
+- `src/innerwork/completion.py` (new) + hidden `innerwork completion bash|zsh|fish` subcommand (`help=argparse.SUPPRESS`; hidden from top-level help, fully callable) — emits a static, best-effort completion script per shell (subcommand names + long flags only; word lists derived from `build_parser()` at emission time, so completion can never advertise a nonexistent subcommand/flag and never misses a real one; no values/positionals, no network, no runtime dependencies, no evaluation of user input). Unknown or missing shell exits 2 with empty stdout.
+- `tests/test_cli_ergonomics.py` (new) — the parse-validity gate for every help example, real-path checks, the runnable-example subset (importers' `--dry-run`, `migrate`/`import` into fresh tmp stores, `export --out`), the `doctor` formatter regression, completion smoke/static-text/hidden/unknown-shell/parser-matching tests, and the pre-existing-suite regression net.
+- `docs/migration-guide.md` — new §2.6 (examples contract, `completion` shape, hiding mechanism, best-effort scope, per-shell install one-liners, static-text guarantee, exit codes); §2 intro corrected from "three subcommands" to the five real commands + §2.6 pointer.
+- `docs/roadmap.md` — the two CLI-ergonomics bullets move from "Directional next" to the shipped list (post-phase-10 addition).
+- No version bump, no new dependency, no CI change.
+
 ### Added — Markdown-tree importer
 
 - `src/innerwork/markdown_importer.py` — `scan_markdown_tree()` / `import_markdown_tree()` / `MarkdownImportError`. Walks a directory of `.md` files and writes spaces/pages directly through `DomainStore` (no portability envelope, no new dependency — frontmatter parsed with the already-declared `pyyaml`). Directory → space/page mapping: each immediate subdirectory is a space (key = sanitized uppercase dirname, `^[A-Z][A-Z0-9]{1,9}$`, collisions and invalid keys error), every `.md` file below a space is a page (nested paths flatten into titles), optional YAML frontmatter (`title`/`author`/`created_at`), unknown keys warned, fresh-target requirement enforced, root-level `.md` files rejected.
