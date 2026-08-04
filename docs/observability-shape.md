@@ -82,8 +82,8 @@ Label semantics:
   the raw path.
 - `status` is the stringified HTTP status code (`"200"`, `"409"`, ...).
 - `reason` on `http_request_errors_total` is either `"exception"` (a
-  raised exception) or `"status_5xx"` (a 5xx response without an
-  exception).
+  raised exception) or `status_<code>` (e.g. `status_500`, a 5xx
+  response without an exception).
 - `span` on `span_duration_ms` is the `trace_span(name)` name, e.g.
   `"create_work_item"`.
 
