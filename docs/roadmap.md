@@ -37,7 +37,7 @@ suite. They form the stable surface that the beta program exercises.
 - Portability surface: `export_domain` / `import_domain` with explicit
   `format_version` and `schema_version`, byte-deterministic round-trip,
   fresh-target requirement, FK-safe insert order.
-- Phase-10 CLI wrappers: `export-domain`, `import-domain`,
+- Phase-10 CLI wrappers: `export`, `import`,
   `migrate --source synthetic`, `metrics`.
 - Synthetic-fixture importer and round-trip test
   (`tests/test_migration.py`).
@@ -68,6 +68,14 @@ suite. They form the stable surface that the beta program exercises.
   UTC windows; no flags → byte-identical point-in-time output. Implemented
   in `src/innerwork/analytics.py` / `src/innerwork/cli.py`; documented in
   `docs/metrics-dashboard.md` §4. Post-phase-10 addition.
+- Operations runbook backup / restore / upgrade procedures — the
+  operations runbook now documents the shipped `scripts/backup.py` /
+  `scripts/restore.py` / `scripts/rollback_drill.py` surface with
+  copy-paste Backup / Restore / Upgrade sections, the portability
+  envelope as the only data-migration path, and honest gap calls (no
+  production-store restore drill recorded; audit sink is CLI-gated;
+  retention is operator guidance). Docs-only: no new scripts or code.
+  Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -81,8 +89,6 @@ fluid and may change as beta feedback arrives.
 
 ### Quality and operability
 
-- Tighten the operations runbook with explicit backup / restore /
-  upgrade procedures.
 - Document a recommended Prometheus / log-scraping shape for operators
   who want to wire `innerwork` into existing observability stacks.
   No exporter ships in Phase 10.
