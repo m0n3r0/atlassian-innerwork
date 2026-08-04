@@ -28,6 +28,11 @@ def backup(source: Path, dest: Path) -> None:
     if not source.is_file():
         raise IsADirectoryError(f"source must be a file: {source}")
     dest.parent.mkdir(parents=True, exist_ok=True)
+    # Replace a pre-existing destination wholesale. Unlink first so a stale
+    # or partial file (e.g. from an interrupted earlier run) can never block
+    # the online-backup copy.
+    if dest.exists():
+        dest.unlink()
     # Open source read-only to avoid accidentally creating a file if it
     # was deleted between exists() and connect().
     src_uri = f"file:{source}?mode=ro"

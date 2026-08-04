@@ -41,6 +41,36 @@ All notable changes to this project are documented here. Format based on [Keep a
 - `tests/test_analytics_windowed.py` — 17 tests: byte-identical default path, hand-computed state/cycle/page/contributor literals (arithmetic in comments), zero-activity explicit zeros with exit 0, `[start, end)` boundary semantics, partial windows, timezone equivalence, naive-stored-as-UTC, flag validation (exit 2, no traceback, no partial JSON), loud unparseable-stored failure with the default path unaffected, permission filtering (anonymous vs member), synthetic-fixture full-window oracle, `--help` docs, determinism, no-new-dependencies.
 - `docs/metrics-dashboard.md` — new §4 documenting the windowed mode (shape, semantics, boundaries, permission note, doctrine exception); §2 "No time series" bullet points at it; pre-existing `--db` → `--database-url` flag-name correction in the examples touched. `docs/roadmap.md` — the roadmap bullet moves from "Directional next" to the shipped list as a post-phase-10 addition.
 
+### Changed — Operations runbook (backup/restore/upgrade)
+
+- `docs/operations-runbook.md` — the "Backup & restore" section is restructured
+  into three locked, copy-paste sections: **Backup** (domain store, audit store if
+  enabled, env-var config; `scripts/backup.py` online-backup snapshots, chmod
+  0o600; no off-host integration ships; retention is operator guidance),
+  **Restore** (stop service → `scripts/restore.py` → integrity check via the
+  stdlib Python one-liner → data verification through the real CLI → optional
+  export round-trip), and **Upgrade** (version check; the portability envelope as
+  the only data-migration path with loud import rejection as the compatibility
+  check; pre-upgrade backup requirement; rollback plan; no automated upgrade
+  path). Honest gap calls: no production-store restore drill recorded; audit
+  logging CLI-gated (`innerwork serve` wires no sink); retention guidance only;
+  `sqlite3` CLI optional (stdlib one-liner is the default).
+- `docs/roadmap.md` — the backup/restore/upgrade bullet moves from "Directional
+  next → Quality and operability" to "Shipped through Phase 10" as a
+  post-phase-10 addition; drifted `export-domain` / `import-domain` CLI names
+  corrected to `export` / `import`.
+- QA hardening (found while verifying every runbook command against ephemeral
+  stores): `scripts/backup.py` now unlinks a pre-existing destination before
+  the online-backup copy, so a stale/partial file (e.g. from an interrupted
+  earlier run) can never block the snapshot and "the destination is
+  overwritten" holds unconditionally; `scripts/restore.py` now restores into a
+  sibling temp file and atomically renames into place, so a `--force` restore
+  from a corrupt or truncated backup fails loudly without destroying the
+  store it was replacing. Three new tests in `tests/test_backup_restore.py`
+  cover stale-dest overwrite, corrupt-backup-no-dest, and
+  failed-`--force`-preserves-existing-dest. Otherwise docs-only: no new
+  dependencies, no version bump.
+
 ### Fixed
 
 - `scripts/check_anti_hallucination.py` — skip `.worktrees/` when scanning. Git worktree checkouts of the repo were being scanned as part of the tree, causing the guardrail to false-positive on the allowlisted `docs/threat-model.md` (and the script/test files) under their worktree paths. CI was unaffected (fresh checkouts have no worktrees); local runs with linked worktrees now pass.

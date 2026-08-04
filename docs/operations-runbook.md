@@ -24,7 +24,9 @@ intent we are converging toward.
 | Boot / health probes | Operator |
 | Observability surfaces | Operator |
 | SLOs | Operator + product |
-| Backup & restore | Operator |
+| Backup | Operator |
+| Restore | Operator |
+| Upgrade | Operator |
 | Rollback drill | Operator |
 | Incident playbooks | On-call |
 | Release process | Maintainer |
@@ -115,25 +117,244 @@ business-level metrics. Treat those numbers as **review targets**, not
 measurements. When the targets drift, file a follow-up issue rather than
 silently relaxing them.
 
-## Backup & restore
+## Backup
 
-The reference app uses SQLite for durable state. The `scripts/backup.py`
-and `scripts/restore.py` helpers use stdlib `sqlite3.Connection.backup`
-so backups are consistent even while the process is serving traffic.
+The reference app uses SQLite for durable state. `scripts/backup.py` and
+`scripts/restore.py` use the stdlib `sqlite3.Connection.backup` API (the
+SQLite online-backup API), so snapshots are consistent even while the
+process is serving traffic, under any journal mode (DELETE or WAL). A raw
+`cp` / file copy of a live database is **not** a consistent snapshot and
+is not supported — use `backup.py`.
+
+### What to back up
+
+Three things matter. Only two are files; there is no config file to copy.
+
+1. **Domain store.** The file named by `INNERWORK_DATABASE_URL` (for
+   example `/var/lib/innerwork/innerwork.db`). If the variable is unset,
+   the app runs against in-memory SQLite and state is lost on restart —
+   a store file must exist before backup matters.
+
+   ```sh
+   python scripts/backup.py /var/lib/innerwork/innerwork.db \
+       /var/backups/innerwork-$(date +%Y%m%dT%H%M%SZ).db
+   ```
+
+2. **Audit store, if enabled.** The file named by `--audit-log` /
+   `INNERWORK_AUDIT_DB`. The audit store exists only if you created one:
+   audit rows are emitted only by CLI invocations that wire the sink, and
+   `innerwork serve` does not wire one. If you use the flag, back the
+   file up the same way:
+
+   ```sh
+   python scripts/backup.py /var/lib/innerwork/audit.db \
+       /var/backups/innerwork-audit-$(date +%Y%m%dT%H%M%SZ).db
+   ```
+
+3. **Config.** There is no config file loader; the whole config surface
+   is the environment-variable table in the Configuration section
+   (`INNERWORK_DATABASE_URL`, `INNERWORK_AUDIT_DB`, `INNERWORK_STATE_PATH`,
+   `PORT`, `UVICORN_LOG_LEVEL`). "Backing up the config" means recording
+   the current env-var set — the deployment manifest or a documented
+   shell snippet. There is no file copy to script.
+
+### How to take a consistent snapshot
+
+Run `backup.py` against the live database. It streams pages via
+`sqlite3.Connection.backup`, which is safe while other processes write
+and needs no manual WAL checkpoint. The destination is overwritten, so
+the `$(date)`-stamped name above yields one file per snapshot.
+
+Verify a backup before declaring it good. Prefer the stdlib Python
+one-liner — it is always available, whereas the `sqlite3` shell may not
+be installed on the host:
 
 ```sh
-# Backup
-python scripts/backup.py /var/lib/innerwork/innerwork.db /var/backups/innerwork-$(date +%Y%m%dT%H%M%SZ).db
+# stdlib Python one-liner (always available)
+python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('PRAGMA integrity_check;').fetchall())" \
+    /var/backups/innerwork-20260529T120000Z.db
 
-# Verify the backup loads (good practice before declaring the backup good)
+# ...or, if the sqlite3 CLI is installed
 sqlite3 /var/backups/innerwork-20260529T120000Z.db "PRAGMA integrity_check;"
-
-# Restore
-python scripts/restore.py /var/backups/innerwork-20260529T120000Z.db /var/lib/innerwork/innerwork.db --force
 ```
 
-Recommended cadence for the reference deployment: hourly snapshot, daily
-off-host copy, weekly restore drill. Adjust according to your RPO target.
+A healthy backup prints `[('ok',)]` (Python) or `ok` (sqlite3).
+
+### Where to store it
+
+- Keep backups in a **separate directory** from the live database; the
+  script creates the destination parent with `mkdir -p`.
+- The script chmods the backup file to `0o600`, so it is not
+  world-readable even when the parent directory is shared.
+- **Off-host copies are an operator decision.** The repo ships no
+  off-host / cloud integration — there is no object-storage or remote
+  sync command. If your RPO requires off-host copies, layer your own
+  (scp, rclone, object storage, ...) on top of the snapshot files.
+- Backup file **names** must not carry secrets (no `...-prod-creds.db`).
+  Backup logs are command lines only.
+
+### Retention guidance (operator guidance)
+
+The reference cadence: hourly snapshot, daily off-host copy, weekly
+restore drill — adjust to your RPO/RTO. A concrete rule of thumb: keep
+24 hourly, 30 daily, and 12 weekly snapshots, or align retention to your
+RPO/RTO targets. **No retention / pruning tool ships** — rotation is
+operator-managed (for example a cron job that deletes files older than
+the policy).
+
+## Restore
+
+Restore into a clean environment, step by step. All commands below were
+executed against ephemeral stores; substitute real paths.
+
+1. **Stop the service** (or accept a brief write window). The scripts are
+   online-safe, but restoring over a live store while the app writes can
+   lose post-backup writes — stop the process for a true point-in-time
+   restore.
+
+2. **Restore into the destination path.**
+
+   ```sh
+   # Fresh destination (preferred for a clean environment)
+   python scripts/restore.py /var/backups/innerwork-20260529T120000Z.db /var/lib/innerwork/innerwork.db
+
+   # Replace an existing file (only after stopping the service)
+   python scripts/restore.py /var/backups/innerwork-20260529T120000Z.db /var/lib/innerwork/innerwork.db --force
+   ```
+
+   `restore.py` refuses to overwrite an existing destination unless
+   `--force` is passed. Using `--force` against a live, in-use store is
+   the operator's responsibility. The restore is atomic: it copies into a
+   sibling temp file and renames into place only on success, so a failed
+   restore (corrupt or truncated backup) fails loudly and leaves an
+   existing destination untouched. The restored file is chmodded `0o600`.
+
+3. **Verify integrity.**
+
+   ```sh
+   # stdlib Python one-liner (always available)
+   python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('PRAGMA integrity_check;').fetchall())" \
+       /var/lib/innerwork/innerwork.db
+
+   # ...or, if the sqlite3 CLI is installed
+   sqlite3 /var/lib/innerwork/innerwork.db "PRAGMA integrity_check;"
+   ```
+
+4. **Verify data through the real CLI.** The `--database-url` format is
+   `sqlite:///absolute/or/relative/path` — for an absolute path the URL
+   is `sqlite:////var/lib/...` (three slashes plus the leading slash).
+
+   ```sh
+   innerwork projects   --database-url sqlite:////var/lib/innerwork/innerwork.db
+   innerwork work-items --database-url sqlite:////var/lib/innerwork/innerwork.db
+   innerwork metrics    --database-url sqlite:////var/lib/innerwork/innerwork.db
+   ```
+
+   Confirm the expected projects / work items are present and the rollup
+   numbers look sane.
+
+5. **(Recommended, deeper) Round-trip check.** Export the restored store
+   and compare top-level collection counts against a pre-restore export
+   if you kept one — semantic parity:
+
+   ```sh
+   innerwork export --database-url sqlite:////var/lib/innerwork/innerwork.db \
+       --out /tmp/verify-$(date +%s).json
+   ```
+
+6. **Automated version.** `scripts/rollback_drill.py` (Rollback drill
+   section) is exactly this loop — seed → backup → destructive mutation →
+   restore → checksum — automated against scratch data; CI runs it on
+   every release tag.
+
+**Honest gap call:** a manual restore drill against a real,
+production-shaped store has **not** been executed or recorded in this
+project. What exists is the CI-gated automated drill on scratch data; the
+"weekly restore drill" cadence above is a recommendation, not a record.
+Verification of a restored store is integrity check + CLI reads + optional
+export compare — there is no `innerwork doctor` command (that is a roadmap
+future item).
+
+## Upgrade
+
+### Version check
+
+- Installed wheel: `pip show atlassian-innerwork` (or `uv pip show
+  atlassian-innerwork`).
+- Released tags: `git tag -l`.
+- Upcoming changes: `CHANGELOG.md` under `[Unreleased]`.
+- Release process: `docs/release.md` (tag → CI gate → rollback drill →
+  wheel + sdist on GitHub).
+
+### The only data-migration path: the portability envelope
+
+`innerwork export` / `innerwork import` are the only data-migration path
+that exists. Every envelope carries a `format_version` (1 by default, 2
+with `--include-audit`) and a `schema_version` (currently
+`DOMAIN_SCHEMA_VERSION` = 4). Import rejects any envelope whose
+`schema_version` differs or whose `format_version` is not 1 or 2, with a
+loud error and exit 2 — nothing is written. That rejection is the
+built-in compatibility check.
+
+Upgrade procedure:
+
+1. **Back up before upgrading — always** (both stores; see Backup):
+
+   ```sh
+   python scripts/backup.py /var/lib/innerwork/innerwork.db \
+       /var/backups/pre-upgrade-$(date +%Y%m%dT%H%M%SZ).db
+   python scripts/backup.py /var/lib/innerwork/audit.db \
+       /var/backups/pre-upgrade-audit-$(date +%Y%m%dT%H%M%SZ).db   # only if an audit store exists
+   ```
+
+2. **Export the pre-upgrade state:**
+
+   ```sh
+   innerwork export --database-url sqlite:////var/lib/innerwork/innerwork.db \
+       --out /var/backups/pre-upgrade-envelope.json
+   ```
+
+   Add `--include-audit --audit-log /var/lib/innerwork/audit.db` only if
+   the audit store must move too (the envelope's `format_version` becomes
+   2).
+
+3. **Install the new wheel** via your deployment mechanism (Docker /
+   systemd / Helm — none ship in this repo).
+
+4. **Import into a fresh store:**
+
+   ```sh
+   innerwork import /var/backups/pre-upgrade-envelope.json \
+       --database-url sqlite:////var/lib/innerwork/innerwork.db.new
+   ```
+
+   The envelope's `schema_version` must equal the new version's
+   `DOMAIN_SCHEMA_VERSION`; if a release changed the schema, an export
+   from the old version is rejected loudly — that is the compatibility
+   check doing its job. Verify the fresh store (Restore steps 3–5), then
+   swap it into place. Delete nothing until post-upgrade verification
+   passes.
+
+### Rollback plan
+
+See `docs/release.md` → "Rolling back". Reverting the deployment
+mechanism is operator-owned (no Docker / Helm / systemd ships). If the
+regression involved destructive data mutation, restore the most recent
+good backup (Restore section), then re-run the drill against the restored
+database to prove the procedure still works on the rolled-back code:
+
+```sh
+python scripts/rollback_drill.py --workdir /tmp/innerwork-drill
+```
+
+### Honest boundary
+
+There is **no automated upgrade path for breaking schema changes** beyond
+what the portability surface provides (roadmap: explicitly out of scope).
+`innerwork migrate --source synthetic` is a data-seeding fixture for
+demo/testing, **not** a schema migrator — do not use it to upgrade a
+store. Operators are expected to read the CHANGELOG and follow
+`docs/migration-guide.md`.
 
 ## Rollback drill
 
@@ -194,7 +415,7 @@ document does not yet exist, the workflow at
 1. Stop the process.
 2. `sqlite3 innerwork.db "PRAGMA integrity_check;"`
 3. If integrity check fails, restore from the most recent good backup
-   (see Backup & restore).
+   (see Restore).
 4. After restore, replay any lost mutations from upstream sources if
    available; otherwise log the data loss in the incident retro.
 
