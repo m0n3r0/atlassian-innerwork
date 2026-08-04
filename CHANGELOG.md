@@ -71,6 +71,37 @@ All notable changes to this project are documented here. Format based on [Keep a
   failed-`--force`-preserves-existing-dest. Otherwise docs-only: no new
   dependencies, no version bump.
 
+### Added — Observability shape (Prometheus / log-scraping shape documentation)
+
+- `docs/observability-shape.md` (new) — a recommended Prometheus / log-scraping
+  shape for operators wiring `innerwork` into existing observability stacks,
+  per roadmap item `observability-shape`. Documents the **shipped** HTTP
+  surface (`GET /metrics`, Prometheus 0.0.4 text on the API port; the full
+  metric catalog — `http_requests_total`, `http_request_errors_total`,
+  `http_request_duration_ms`, `domain_writes_total`,
+  `domain_write_conflicts_total`, `span_duration_ms` — with label semantics
+  incl. route-template `endpoint` cardinality control and the ms histogram
+  buckets) and the **shipped** JSON-lines log shape (field contract `ts` /
+  `level` / `logger` / `msg` / `request_id` / `spans` / `exc` / `extra`,
+  `x-request-id` correlation). Then makes explicitly-labeled **recommendations**:
+  an `innerwork_*` naming/label convention for future domain/workflow metrics
+  (bounded-cardinality rules, worked `innerwork_transitions_total` example),
+  a scrape-friendly log contract (shipper-side JSON parsing, `level` routing,
+  `request_id` as the join key, no app-side enrichment), and collection
+  guidance with an honest tradeoff table — pull-based scraping of the existing
+  `/metrics` endpoint for service telemetry (with a scrape_config example) vs
+  textfile-collector / pushgateway for the `innerwork metrics` CLI rollup
+  (recommended rollup JSON → metric mapping table; `cycle_time_*_seconds`
+  units; `by_space`/`by_actor` cardinality caveat). **No exporter ships** —
+  the document is explicit that nothing beyond the in-process registry and the
+  `/metrics` route exists, and that all collection patterns are operator-side.
+- `docs/roadmap.md` — the observability-shape bullet moves from "Directional
+  next → Quality and operability" to "Shipped through Phase 10" as a
+  post-phase-10 addition.
+- `docs/site-outline.md` — the new document is added to the Operations
+  navigation and the Operations IA bucket.
+- Docs-only: no new dependencies, no code changes, no version bump.
+
 ### Fixed
 
 - `scripts/check_anti_hallucination.py` — skip `.worktrees/` when scanning. Git worktree checkouts of the repo were being scanned as part of the tree, causing the guardrail to false-positive on the allowlisted `docs/threat-model.md` (and the script/test files) under their worktree paths. CI was unaffected (fresh checkouts have no worktrees); local runs with linked worktrees now pass.
