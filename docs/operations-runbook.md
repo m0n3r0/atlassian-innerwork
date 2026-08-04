@@ -253,7 +253,20 @@ executed against ephemeral stores; substitute real paths.
    Confirm the expected projects / work items are present and the rollup
    numbers look sane.
 
-5. **(Recommended, deeper) Round-trip check.** Export the restored store
+5. **Validate the restored store with the doctor.** `innerwork doctor`
+   checks the restored file against the current schema, the persisted
+   schema versions, and common operator misconfigurations — read-only,
+   it never modifies the store:
+
+   ```sh
+   innerwork doctor /var/lib/innerwork/innerwork.db --integrity-check
+   ```
+
+   Exit 0 means healthy (no error or warning findings); see
+   `docs/migration-guide.md` §2.5 for the exit-code and `--json`
+   contracts.
+
+6. **(Recommended, deeper) Round-trip check.** Export the restored store
    and compare top-level collection counts against a pre-restore export
    if you kept one — semantic parity:
 
@@ -262,7 +275,7 @@ executed against ephemeral stores; substitute real paths.
        --out /tmp/verify-$(date +%s).json
    ```
 
-6. **Automated version.** `scripts/rollback_drill.py` (Rollback drill
+7. **Automated version.** `scripts/rollback_drill.py` (Rollback drill
    section) is exactly this loop — seed → backup → destructive mutation →
    restore → checksum — automated against scratch data; CI runs it on
    every release tag.
@@ -271,9 +284,9 @@ executed against ephemeral stores; substitute real paths.
 production-shaped store has **not** been executed or recorded in this
 project. What exists is the CI-gated automated drill on scratch data; the
 "weekly restore drill" cadence above is a recommendation, not a record.
-Verification of a restored store is integrity check + CLI reads + optional
-export compare — there is no `innerwork doctor` command (that is a roadmap
-future item).
+Verification of a restored store is integrity check + `innerwork doctor`
+(read-only schema/version validation; `docs/migration-guide.md` §2.5) +
+CLI reads + optional export compare.
 
 ## Upgrade
 
