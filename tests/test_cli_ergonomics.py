@@ -13,7 +13,6 @@ import argparse
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from innerwork.cli import build_parser
+from innerwork.completion import completion_script, subcommand_words
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -124,23 +124,34 @@ def test_runnable_examples_exit_zero(tmp_path: Path):
     """The side-effect-conservative subset of the locked examples actually
     runs and exits 0 against fresh ``tmp_path`` stores.
 
-    The checked-in markdown-tree fixture deliberately contains a root-level
-    ``root.md`` to exercise the importer's rejection path
-    (``test_root_level_md_rejected``), so the dry-run below uses a tmp copy
-    without it — the same command shape the ``--help`` example advertises
-    (``import-markdown <tree> --database-url ... --dry-run``) against a
-    clean target, exactly like ``test_markdown_importer._fixture_copy``.
+    The import-markdown examples point at
+    ``tests/fixtures/markdown_tree_importable`` — a deliberately
+    importable fixture (space subdirectories, no root-level ``.md``
+    files). The pre-existing ``markdown_tree`` fixture cannot be used for
+    help examples: it deliberately contains root-level ``root.md`` /
+    ``docs/index.md`` to exercise the importer's rejection path, so any
+    example pointing at it fails at runtime (exit 2) even though it
+    parses. QA gate found this gap (PR #63); the fixture and examples
+    were fixed together, and this test runs the exact example shapes.
     """
-    md_tree = tmp_path / "markdown_tree"
-    shutil.copytree(REPO_ROOT / "tests" / "fixtures" / "markdown_tree", md_tree)
-    (md_tree / "root.md").unlink()
     md_db = tmp_path / "md.db"
     r = _run_cli(
         "import-markdown",
-        str(md_tree),
+        "tests/fixtures/markdown_tree_importable",
         "--database-url",
         f"sqlite:///{md_db}",
         "--dry-run",
+    )
+    assert r.returncode == 0, r.stderr
+
+    md_db2 = tmp_path / "md2.db"
+    r = _run_cli(
+        "import-markdown",
+        "tests/fixtures/markdown_tree_importable",
+        "--author",
+        "eml",
+        "--database-url",
+        f"sqlite:///{md_db2}",
     )
     assert r.returncode == 0, r.stderr
 
@@ -151,6 +162,19 @@ def test_runnable_examples_exit_zero(tmp_path: Path):
         "--database-url",
         f"sqlite:///{csv_db}",
         "--dry-run",
+    )
+    assert r.returncode == 0, r.stderr
+
+    csv_db2 = tmp_path / "csv2.db"
+    r = _run_cli(
+        "import-csv",
+        "tests/fixtures/csv_import/work_items.tsv",
+        "--delimiter",
+        "tab",
+        "--owner",
+        "eml",
+        "--database-url",
+        f"sqlite:///{csv_db2}",
     )
     assert r.returncode == 0, r.stderr
 
@@ -316,6 +340,31 @@ def test_completion_stdout_only():
     result = _run_cli("completion", "bash")
     assert result.returncode == 0
     assert result.stderr == ""
+
+
+def test_completion_module_api_direct():
+    """Direct module-level smoke for ``innerwork.completion``.
+
+    The CLI-level completion tests drive ``innerwork completion <shell>``
+    through ``_run_cli`` subprocesses, whose environment is deliberately
+    scrubbed (``PYTHONPATH``/``PATH`` only) — so under plain ``pytest
+    --cov`` none of that subprocess execution is attributed to
+    ``completion.py``. Exercising the module in-process here makes the new
+    module's coverage visible in the standard report and locks the
+    module-level API contract: per-shell scripts are non-empty, word lists
+    derive from ``build_parser()`` (and include the hidden ``completion``
+    subcommand itself), and an unsupported shell raises ``ValueError``
+    (the CLI path exits 2 via argparse ``choices``; the module function
+    rejects it directly).
+    """
+    words = subcommand_words(build_parser())
+    assert "export" in words
+    assert "completion" in words  # hidden from top-level help, still real
+    for shell in COMPLETION_SHELLS:
+        script = completion_script(shell)
+        assert script.strip()
+    with pytest.raises(ValueError):
+        completion_script("powershell")
 
 
 def test_migration_guide_documents_best_effort():

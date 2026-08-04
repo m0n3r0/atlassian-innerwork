@@ -252,10 +252,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  innerwork import-markdown tests/fixtures/markdown_tree/docs "
+            "  innerwork import-markdown tests/fixtures/markdown_tree_importable "
             "--database-url sqlite:///.innerwork/innerwork.db --dry-run\n"
-            "  innerwork import-markdown tests/fixtures/markdown_tree --author eml "
-            "--database-url sqlite:///.innerwork/innerwork.db\n"
+            "  innerwork import-markdown tests/fixtures/markdown_tree_importable "
+            "--author eml --database-url sqlite:///.innerwork/innerwork.db\n"
         ),
     )
     _add_db_arg(md_importer_cmd)
