@@ -95,6 +95,16 @@ suite. They form the stable surface that the beta program exercises.
   audit-database shape). Implemented in `src/innerwork/doctor.py` /
   `src/innerwork/cli.py`; documented in `docs/migration-guide.md` §2.5.
   Post-phase-10 addition.
+- CLI ergonomics — the five migration commands (`export`, `import`,
+  `migrate`, `import-markdown`, `import-csv`) ship parse-validated
+  `--help` examples (real flags and paths only; verified against the
+  real argument parser), `doctor`/migration help renders examples on
+  separate lines (raw-description formatter), and a hidden
+  `innerwork completion bash|zsh|fish` subcommand emits static,
+  best-effort shell-completion scripts with word lists derived from
+  `build_parser()` at emission time. Implemented in
+  `src/innerwork/completion.py` / `src/innerwork/cli.py`; documented in
+  `docs/migration-guide.md` §2.6. Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -117,12 +127,6 @@ fluid and may change as beta feedback arrives.
 
 - Consider compact (indent=None) streaming export plumbing for
   pipe-oriented consumers, if demand appears.
-
-### CLI ergonomics
-
-- Friendlier `--help` examples on the migration commands.
-- Optional shell completion (bash, zsh, fish) emitted by a hidden
-  CLI subcommand.
 
 ### Documentation
 

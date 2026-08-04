@@ -133,6 +133,15 @@ def build_parser() -> argparse.ArgumentParser:
     export_cmd = subcommands.add_parser(
         "export",
         help="Export the entire work-graph domain as a portable JSON envelope",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  innerwork export --database-url sqlite:///.innerwork/innerwork.db\n"
+            "  innerwork export --database-url sqlite:///.innerwork/innerwork.db --out "
+            "data/export.json\n"
+            "  innerwork export --database-url sqlite:///.innerwork/innerwork.db "
+            "--include-audit --audit-log data/audit.db --out data/export.json\n"
+        ),
     )
     _add_db_arg(export_cmd)
     export_cmd.add_argument(
@@ -169,6 +178,14 @@ def build_parser() -> argparse.ArgumentParser:
     import_cmd = subcommands.add_parser(
         "import",
         help="Import a portable JSON envelope into a fresh domain store",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  innerwork import tests/fixtures/synthetic_migration.json "
+            "--database-url sqlite:///.innerwork/innerwork.db\n"
+            "  innerwork import data/export.json --database-url "
+            "sqlite:///.innerwork/innerwork.db --audit-log data/audit.db\n"
+        ),
     )
     _add_db_arg(import_cmd)
     import_cmd.add_argument(
@@ -189,6 +206,13 @@ def build_parser() -> argparse.ArgumentParser:
     migrate_cmd = subcommands.add_parser(
         "migrate",
         help="Run a bundled migration source (Phase 10: synthetic fixture only)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  innerwork migrate --database-url sqlite:///.innerwork/innerwork.db\n"
+            "  innerwork migrate --source synthetic --database-url "
+            "sqlite:///.innerwork/innerwork.db --audit-log data/audit.db\n"
+        ),
     )
     _add_db_arg(migrate_cmd)
     _add_audit_log_arg(migrate_cmd)
@@ -225,6 +249,14 @@ def build_parser() -> argparse.ArgumentParser:
     md_importer_cmd = subcommands.add_parser(
         "import-markdown",
         help="Import a directory tree of markdown files into spaces/pages",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  innerwork import-markdown tests/fixtures/markdown_tree_importable "
+            "--database-url sqlite:///.innerwork/innerwork.db --dry-run\n"
+            "  innerwork import-markdown tests/fixtures/markdown_tree_importable "
+            "--author eml --database-url sqlite:///.innerwork/innerwork.db\n"
+        ),
     )
     _add_db_arg(md_importer_cmd)
     _add_audit_log_arg(md_importer_cmd)
@@ -250,6 +282,15 @@ def build_parser() -> argparse.ArgumentParser:
     csv_importer_cmd = subcommands.add_parser(
         "import-csv",
         help="Import a CSV/TSV file of work-item rows into projects and work items",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  innerwork import-csv tests/fixtures/csv_import/work_items.csv "
+            "--database-url sqlite:///.innerwork/innerwork.db --dry-run\n"
+            "  innerwork import-csv tests/fixtures/csv_import/work_items.tsv "
+            "--delimiter tab --owner eml "
+            "--database-url sqlite:///.innerwork/innerwork.db\n"
+        ),
     )
     _add_db_arg(csv_importer_cmd)
     _add_audit_log_arg(csv_importer_cmd)
@@ -289,6 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
             "surface common operator misconfigurations. Read-only: the "
             "target file is never modified."
         ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
             "  innerwork doctor                          validate the configured "
@@ -326,6 +368,40 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    # ----- shell completion (hidden from top-level help) -----------------
+    completion_cmd = subcommands.add_parser(
+        "completion",
+        help=argparse.SUPPRESS,
+        description=(
+            "Emit a static shell-completion script for bash, zsh, or fish. "
+            "Hidden from top-level help on purpose; see "
+            "docs/migration-guide.md §2.6."
+        ),
+    )
+    completion_cmd.add_argument(
+        "shell",
+        choices=("bash", "zsh", "fish"),
+        help="Target shell: bash, zsh, or fish",
+    )
+
+    # Hide `completion` from top-level help while keeping it registered
+    # and callable. help=argparse.SUPPRESS is the documented mechanism,
+    # but on Python 3.10/3.11 the subparsers action still materializes a
+    # pseudo-action for it (rendering `completion ==SUPPRESS==` in the
+    # listing) and the usage metavar is derived from the registered
+    # parser map (which must keep `completion` to stay callable). Fix
+    # both: drop the pseudo-action and rebuild the metavar from the
+    # visible subcommands, right here at build time.
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            action._choices_actions = [
+                pseudo
+                for pseudo in action._choices_actions
+                if pseudo.dest != "completion"
+            ]
+            visible = [name for name in sorted(action.choices) if name != "completion"]
+            action.metavar = "{" + ",".join(visible) + "}"
+
     return parser
 
 
@@ -361,6 +437,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "doctor":
         return _doctor_dispatch(args)
+    if args.command == "completion":
+        return _completion_dispatch(args)
     if args.command in {
         "projects",
         "project-create",
@@ -514,6 +592,19 @@ def _doctor_dispatch(args: argparse.Namespace) -> int:
     else:
         sys.stdout.write(render_human_report(report))
     return report.exit_code
+
+
+def _completion_dispatch(args: argparse.Namespace) -> int:
+    """Emit the static shell-completion script for the requested shell.
+
+    Constructs nothing (no ``DomainStore``), like ``doctor``'s branch:
+    the module performs no I/O and the script is pure static text.
+    """
+
+    from .completion import completion_script
+
+    sys.stdout.write(completion_script(args.shell))
+    return 0
 
 
 def _domain_dispatch(args: argparse.Namespace) -> int:
