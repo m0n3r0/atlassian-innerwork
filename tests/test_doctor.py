@@ -575,3 +575,311 @@ def test_doctor_imports_stdlib_only() -> None:
         if stripped.startswith("import ") or stripped.startswith("from "):
             module = stripped.split()[1].split(".")[0]
             assert module in allowed, f"non-stdlib import in doctor.py: {line}"
+
+
+# ----------------------------------------------------------------------
+# QA regression additions (t_487a74f3): gaps found during the QA gate
+# ----------------------------------------------------------------------
+
+
+def test_empty_file_is_not_a_sqlite_db_exit_1(tmp_path: Path):
+    """A zero-byte file is the canonical 'empty input' — header check errors."""
+    empty = tmp_path / "empty.db"
+    empty.write_bytes(b"")
+    result = _run_cli("doctor", str(empty))
+    assert result.returncode == 1
+    assert "target.sqlite_header" in result.stdout
+    assert "schema.domain_version" not in result.stdout  # schema group skipped
+
+
+def test_json_target_null_when_path_missing(tmp_path: Path):
+    """JSON contract rule 4: size/mtime/age_days are null for a missing path."""
+    result = _run_cli("doctor", str(tmp_path / "nope.db"), "--json")
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    assert payload["target"]["exists"] is False
+    assert payload["target"]["size_bytes"] is None
+    assert payload["target"]["mtime"] is None
+    assert payload["target"]["age_days"] is None
+
+
+def test_disk_usage_oserror_is_silent(tmp_path: Path, monkeypatch):
+    """T8: when free space is unknowable the doctor never fabricates a finding."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+
+    def boom(_path):
+        raise OSError("simulated statfs failure")
+
+    monkeypatch.setattr(doctor.shutil, "disk_usage", boom)
+    report = doctor.run_doctor(db)
+    ids = [finding.id for finding in report.checks]
+    assert "target.disk_space" not in ids
+    assert report.exit_code == 0
+
+
+def test_domain_version_key_missing_in_meta_exit_1(tmp_path: Path):
+    """S1: meta exists but the version key row is gone -> error, not a crash."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM meta WHERE key='domain_schema_version'")
+    result = _run_cli("doctor", str(db))
+    assert result.returncode == 1
+    assert "schema.domain_version" in result.stdout
+    assert "not set in meta" in result.stdout
+
+
+def test_extra_column_is_info_only(tmp_path: Path):
+    """S3: forward-compatible extra columns are info, never error (exit 0)."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE projects ADD COLUMN extra_note TEXT")
+    result = _run_cli("doctor", str(db), "--json")
+    assert result.returncode == 0, result.stdout
+    payload = json.loads(result.stdout)
+    extra = [
+        c
+        for c in payload["checks"]
+        if c["id"] == "schema.columns.projects" and c["severity"] == "info"
+    ]
+    assert extra and "extra_note" in extra[0]["message"]
+
+
+def test_index_on_wrong_table_is_warning(tmp_path: Path):
+    """S4: an index present-but-attached-to-the-wrong-table is a warning."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("DROP INDEX ix_work_items_project")
+        conn.execute(
+            "CREATE INDEX ix_work_items_project ON pages(current_version)"
+        )
+    result = _run_cli("doctor", str(db))
+    assert result.returncode == 1
+    assert "schema.index.ix_work_items_project" in result.stdout
+    assert "attached to table 'pages'" in result.stdout
+
+
+def test_partial_broker_tables_and_missing_version_warning(tmp_path: Path):
+    """S6/S7: a broker subset (only services) is fine column-wise but the
+    missing schema_version row is a drift warning naming 'missing'."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE services (service_id TEXT PRIMARY KEY, "
+            "payload_json TEXT NOT NULL, updated_at TEXT NOT NULL "
+            "DEFAULT CURRENT_TIMESTAMP)"
+        )
+    result = _run_cli("doctor", str(db), "--json")
+    assert result.returncode == 1
+    payload = json.loads(result.stdout)
+    ids = [c["id"] for c in payload["checks"]]
+    assert "schema.broker_scope" not in ids  # broker tables present
+    assert "schema.broker_columns.services" not in ids  # full columns
+    drift = next(c for c in payload["checks"] if c["id"] == "schema.broker_version")
+    assert drift["severity"] == "warning"
+    assert "missing" in drift["message"]
+
+
+def test_broker_extra_column_is_info(tmp_path: Path):
+    """S6: forward-compatible broker extra column -> info, exit 0."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    SqliteStateStore(db)  # full broker set + schema_version=1
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE operations ADD COLUMN extra_note TEXT")
+    result = _run_cli("doctor", str(db), "--json")
+    assert result.returncode == 0, result.stdout
+    payload = json.loads(result.stdout)
+    extra = [
+        c
+        for c in payload["checks"]
+        if c["id"] == "schema.broker_columns.operations" and c["severity"] == "info"
+    ]
+    assert extra and "extra_note" in extra[0]["message"]
+
+
+def test_broker_version_drift_value_warning(tmp_path: Path):
+    """S7: schema_version stored but drifted from the code mirror -> warning."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    SqliteStateStore(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE meta SET value='0' WHERE key='schema_version'")
+    result = _run_cli("doctor", str(db))
+    assert result.returncode == 1
+    assert "schema.broker_version" in result.stdout
+    assert "expected '1'" in result.stdout
+
+
+def test_schema_phase_sqlite_error_reported_as_openable(tmp_path: Path, monkeypatch):
+    """S-group: a concurrent sqlite error after T5 falls back to target.openable
+    instead of inventing a new check id."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    real_connect = doctor._connect_ro
+    calls = {"n": 0}
+
+    def flaky(path):
+        calls["n"] += 1
+        if calls["n"] >= 2:  # first call is T5; second is the schema probe
+            raise sqlite3.OperationalError("database is locked")
+        return real_connect(path)
+
+    monkeypatch.setattr(doctor, "_connect_ro", flaky)
+    report = doctor.run_doctor(db)
+    ids = [finding.id for finding in report.checks]
+    assert "target.openable" in ids
+    assert report.schema_skipped is True
+
+
+def test_open_oserror_reported_as_openable(tmp_path: Path, monkeypatch):
+    """T5: a non-sqlite OSError on the read-only open is still target.openable."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+
+    def boom(_path):
+        raise OSError("simulated open failure")
+
+    monkeypatch.setattr(doctor, "_connect_ro", boom)
+    report = doctor.run_doctor(db)
+    ids = [finding.id for finding in report.checks]
+    assert "target.openable" in ids
+    assert report.schema_skipped is True
+
+
+def test_header_read_oserror_reported(tmp_path: Path, monkeypatch):
+    """T4: an OSError mid-header-read is reported under target.sqlite_header."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    real_open = Path.open
+    state = {"n": 0}
+
+    def flaky(self, *args, **kwargs):
+        state["n"] += 1
+        if state["n"] == 2:  # call 1 is the T3 probe open; call 2 is the header read
+            raise OSError("simulated read failure")
+        return real_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", flaky)
+    report = doctor.run_doctor(db)
+    ids = [finding.id for finding in report.checks]
+    assert "target.sqlite_header" in ids
+
+
+def test_audit_log_table_missing_is_error(tmp_path: Path):
+    """A2: a valid SQLite file without audit_log is an error, not 'not a DB'."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    audit = tmp_path / "audit.db"
+    with sqlite3.connect(audit) as conn:
+        conn.execute("CREATE TABLE dummy (x TEXT)")
+    result = _run_cli("doctor", str(db), "--audit-log", str(audit))
+    assert result.returncode == 1
+    assert "schema.audit_log_table" in result.stdout
+    assert "schema.audit_target" not in result.stdout
+
+
+def test_audit_missing_column_is_error(tmp_path: Path):
+    """A3: audit_log with a truncated column set is an error."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    audit = tmp_path / "audit.db"
+    with sqlite3.connect(audit) as conn:
+        conn.execute(
+            "CREATE TABLE audit_log (event_id TEXT PRIMARY KEY, ts TEXT)"
+        )
+    result = _run_cli("doctor", str(db), "--audit-log", str(audit))
+    assert result.returncode == 1
+    assert "schema.audit_columns" in result.stdout
+    assert "actor" in result.stdout  # a missing expected column is named
+
+
+def test_audit_extra_column_is_info(tmp_path: Path):
+    """A3: forward-compatible audit extra column -> info, exit 0."""
+    db = tmp_path / "innerwork.db"
+    audit = tmp_path / "audit.db"
+    _make_domain_db(db)
+    _make_audit_db(audit)
+    with sqlite3.connect(audit) as conn:
+        conn.execute("ALTER TABLE audit_log ADD COLUMN extra_note TEXT")
+    result = _run_cli("doctor", str(db), "--audit-log", str(audit), "--json")
+    assert result.returncode == 0, result.stdout
+    payload = json.loads(result.stdout)
+    extra = [
+        c
+        for c in payload["checks"]
+        if c["id"] == "schema.audit_columns" and c["severity"] == "info"
+    ]
+    assert extra and "extra_note" in extra[0]["message"]
+
+
+def test_audit_target_not_sqlite_db_error(tmp_path: Path):
+    """A1-gate: an audit path that is not a SQLite file -> schema.audit_target."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    audit = tmp_path / "audit.txt"
+    audit.write_text("not a database\n", encoding="utf-8")
+    result = _run_cli("doctor", str(db), "--audit-log", str(audit))
+    assert result.returncode == 1
+    assert "schema.audit_target" in result.stdout
+
+
+def test_audit_corrupt_open_error(tmp_path: Path):
+    """A1-gate: header-valid but truncated audit file -> schema.audit_target."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    full_audit = tmp_path / "full-audit.db"
+    _make_audit_db(full_audit)
+    audit = tmp_path / "truncated-audit.db"
+    audit.write_bytes(full_audit.read_bytes()[:512])
+    result = _run_cli("doctor", str(db), "--audit-log", str(audit))
+    assert result.returncode == 1
+    assert "schema.audit_target" in result.stdout
+
+
+def test_integrity_check_rows_path_exit_1(tmp_path: Path):
+    """T6: when integrity_check *returns* error rows (index-root corruption)
+    rather than raising, the finding still fires — and only with the flag."""
+    db = tmp_path / "innerwork.db"
+    _make_domain_db(db)
+    with sqlite3.connect(db) as conn:
+        root = conn.execute(
+            "SELECT rootpage FROM sqlite_master WHERE name='ix_work_items_project'"
+        ).fetchone()
+    assert root is not None and root[0] != 1
+    data = bytearray(db.read_bytes())
+    page_size = int.from_bytes(data[16:18], "big")
+    data[(root[0] - 1) * page_size + 3] ^= 0xFF
+    db.write_bytes(bytes(data))
+    without = _run_cli("doctor", str(db))
+    assert without.returncode == 0, without.stdout
+    assert "target.integrity" not in without.stdout
+    with_flag = _run_cli("doctor", str(db), "--integrity-check", "--json")
+    assert with_flag.returncode == 1
+    payload = json.loads(with_flag.stdout)
+    integrity = [c for c in payload["checks"] if c["id"] == "target.integrity"]
+    assert len(integrity) == 1 and integrity[0]["severity"] == "error"
+
+
+def test_audit_path_from_env_var(tmp_path: Path):
+    """CLI: INNERWORK_AUDIT_DB env resolves the audit target (no --audit-log)."""
+    db = tmp_path / "innerwork.db"
+    audit = tmp_path / "audit.db"
+    _make_domain_db(db)
+    _make_audit_db(audit)
+    result = _run_cli(
+        "doctor",
+        str(db),
+        "--json",
+        env_extra={"INNERWORK_AUDIT_DB": str(audit)},
+    )
+    assert result.returncode == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert not any(c["id"] == "schema.audit_skipped" for c in payload["checks"])
+    assert all(
+        c["ok"] for c in payload["checks"] if c["id"].startswith("schema.audit_")
+    )
