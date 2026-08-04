@@ -30,16 +30,23 @@ def restore(backup: Path, dest: Path, *, force: bool = False) -> None:
             f"destination exists; pass --force to overwrite: {dest}",
         )
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.exists():
-        dest.unlink()
-    src_uri = f"file:{backup}?mode=ro"
-    with sqlite3.connect(src_uri, uri=True) as src_conn, sqlite3.connect(dest) as dst_conn:
-        src_conn.backup(dst_conn)
-        dst_conn.commit()
+    # Restore into a sibling temp file, then atomically rename into place.
+    # If the source backup is corrupt or the copy is interrupted, the
+    # existing destination is left untouched (a --force restore must never
+    # destroy the store it is replacing).
+    tmp = dest.with_name(f".{dest.name}.restore-{os.getpid()}.tmp")
     try:
-        os.chmod(dest, 0o600)
-    except OSError:
-        pass
+        src_uri = f"file:{backup}?mode=ro"
+        with sqlite3.connect(src_uri, uri=True) as src_conn, sqlite3.connect(tmp) as dst_conn:
+            src_conn.backup(dst_conn)
+            dst_conn.commit()
+        try:
+            os.chmod(tmp, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp, dest)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def main(argv: list[str] | None = None) -> int:

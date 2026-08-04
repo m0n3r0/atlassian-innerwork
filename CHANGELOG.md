@@ -59,8 +59,17 @@ All notable changes to this project are documented here. Format based on [Keep a
   next → Quality and operability" to "Shipped through Phase 10" as a
   post-phase-10 addition; drifted `export-domain` / `import-domain` CLI names
   corrected to `export` / `import`.
-- Docs-only slice: no new scripts, no code changes, no new dependencies, no
-  version bump.
+- QA hardening (found while verifying every runbook command against ephemeral
+  stores): `scripts/backup.py` now unlinks a pre-existing destination before
+  the online-backup copy, so a stale/partial file (e.g. from an interrupted
+  earlier run) can never block the snapshot and "the destination is
+  overwritten" holds unconditionally; `scripts/restore.py` now restores into a
+  sibling temp file and atomically renames into place, so a `--force` restore
+  from a corrupt or truncated backup fails loudly without destroying the
+  store it was replacing. Three new tests in `tests/test_backup_restore.py`
+  cover stale-dest overwrite, corrupt-backup-no-dest, and
+  failed-`--force`-preserves-existing-dest. Otherwise docs-only: no new
+  dependencies, no version bump.
 
 ### Fixed
 

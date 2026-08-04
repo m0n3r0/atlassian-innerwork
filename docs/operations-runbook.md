@@ -224,7 +224,10 @@ executed against ephemeral stores; substitute real paths.
 
    `restore.py` refuses to overwrite an existing destination unless
    `--force` is passed. Using `--force` against a live, in-use store is
-   the operator's responsibility. The restored file is chmodded `0o600`.
+   the operator's responsibility. The restore is atomic: it copies into a
+   sibling temp file and renames into place only on success, so a failed
+   restore (corrupt or truncated backup) fails loudly and leaves an
+   existing destination untouched. The restored file is chmodded `0o600`.
 
 3. **Verify integrity.**
 
