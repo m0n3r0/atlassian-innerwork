@@ -883,3 +883,34 @@ def test_audit_path_from_env_var(tmp_path: Path):
     assert all(
         c["ok"] for c in payload["checks"] if c["id"].startswith("schema.audit_")
     )
+
+
+def test_uri_filename_special_chars_percent_encoded(tmp_path: Path):
+    """Regression (review F1): filenames containing ``?`` or ``#`` are legal
+    POSIX names, but an unencoded ``file:{path}?mode=ro`` URI truncates at
+    the raw ``?``/``#`` — validating the wrong file, silently dropping
+    ``mode=ro``, and creating a spurious prefix-named file. ``_connect_ro``
+    must percent-encode via ``Path.as_uri()`` (``?``->``%3F``, ``#``->``%23``).
+
+    Asserts (a) the correct file is validated, (b) no spurious file is
+    created, (c) ``mode=ro`` holds (a write attempt is still blocked).
+    """
+    for marker in ("?", "#"):
+        db = tmp_path / f"innerwork{marker}prod.db"
+        _make_domain_db(db)
+        dir_before = sorted(p.name for p in tmp_path.iterdir())
+
+        # (a) The correct file is validated: a healthy DB exits 0.
+        result = _run_cli("doctor", str(db))
+        assert result.returncode == 0, result.stdout
+
+        # (b) No spurious prefix-truncated file (e.g. ``innerwork``) exists.
+        assert sorted(p.name for p in tmp_path.iterdir()) == dir_before
+
+        # (c) mode=ro still holds: writes through the doctor connection fail.
+        conn = doctor._connect_ro(db)
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                conn.execute("CREATE TABLE sneaky (id INTEGER PRIMARY KEY)")
+        finally:
+            conn.close()

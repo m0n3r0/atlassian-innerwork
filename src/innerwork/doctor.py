@@ -288,7 +288,7 @@ class DoctorReport:
 def _connect_ro(path: Path) -> sqlite3.Connection:
     """Open ``path`` read-only at the VFS layer (creates no sidecars)."""
 
-    return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    return sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
 
 
 def run_doctor(
