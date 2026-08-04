@@ -77,9 +77,12 @@ What is **not** in the portable surface (by design):
 
 ## 2. CLI surface
 
-Phase 10 adds three subcommands to `innerwork` that wrap the existing
-portability and analytics modules. These commands are thin and
-side-effect-conservative: they never mutate an already-populated store.
+Phase 10 adds five subcommands to `innerwork` that wrap the existing
+portability and analytics modules: `export`, `import`, `migrate`,
+`metrics`, and `doctor` (documented in §2.1–§2.5). These commands are
+thin and side-effect-conservative: they never mutate an already-populated
+store. §2.6 documents the `--help` examples contract and the hidden
+`innerwork completion` subcommand (shell completion).
 
 > **Streaming + atomic `--out` (post-phase-10).** `innerwork export`
 > writes the portability envelope incrementally (rows are fetched in
@@ -271,6 +274,54 @@ INFO  [schema.audit_skipped] no audit database configured (set --audit-log or IN
 
 A healthy database prints a single `OK: database is healthy (0 warnings,
 0 errors)` line and exits 0.
+
+### 2.6 Help examples and shell completion
+
+Every migration/import/export subcommand (`export`, `import`, `migrate`,
+`import-markdown`, `import-csv`) documents runnable usage examples in its
+`--help` output, under an `examples:` block. The examples contract:
+
+- **Parse-validated.** Every example line is verified by the test suite
+  to parse through the real argument parser (`build_parser()`), so help
+  text can never advertise a flag, positional, or choice that does not
+  exist.
+- **Real paths.** Repo-relative paths point at fixtures that exist in the
+  repository; generic paths (`data/...`,
+  `sqlite:///.innerwork/innerwork.db`) are documented local conventions.
+- **Side-effect-conservative.** Importers lead with `--dry-run` where the
+  command supports it; `export` examples are read-only or `--out`-targeted.
+
+`innerwork doctor --help` renders its examples the same way — on
+separate lines, thanks to the raw-description formatter.
+
+**Shell completion.** `innerwork completion bash|zsh|fish` emits a static
+completion script to stdout. The subcommand is **hidden from top-level
+help on purpose** (registered with `argparse.SUPPRESS`): it does not
+appear in `innerwork --help`, but it is a real, callable command
+(`innerwork completion --help` works). Install per shell:
+
+```sh
+# bash
+source <(innerwork completion bash)
+# zsh
+source <(innerwork completion zsh)
+# fish
+innerwork completion fish | source
+```
+
+Scope is **best-effort, not exhaustive**: the scripts complete subcommand
+names and long flags only. They do not complete flag values (paths,
+`sqlite:///` URLs, delimiter choices), positional arguments, short-flag
+clustering, or nested subcommand chains (there are none today). Word
+lists are derived from the real argument parser at emission time, so
+completion can never advertise a subcommand or flag that does not exist,
+and never misses one that does.
+
+The scripts are plain static text: no network access, no runtime
+dependencies, no evaluation of user input — the only computation a loaded
+script performs is word-list completion against the typed prefix. Exit
+codes: 0 on success (script written to stdout, stderr empty); 2 for an
+unknown or missing shell argument (argparse usage error).
 
 ---
 
