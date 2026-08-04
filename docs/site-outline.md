@@ -77,7 +77,7 @@ nav:
 Existing `docs/*.md` and the new root-level governance docs group into six IA buckets:
 
 - **Getting Started** — `README.md`, `docs/docker-poc.md`, `docs/live-application.md`.
-- **Architecture** — `docs/overview.md`, `docs/grand-design.md`, `docs/production-oss-grand-design.md`, `docs/product-scope.md`, `docs/work-graph-domain.md`, `docs/knowledge-graph-domain.md`, `docs/collaboration.md`, `docs/comments-and-idempotency.md`, `docs/phase-6.md`.
+- **Architecture** — `docs/overview.md`, `docs/architecture.md`, `docs/grand-design.md`, `docs/production-oss-grand-design.md`, `docs/product-scope.md`, `docs/work-graph-domain.md`, `docs/knowledge-graph-domain.md`, `docs/collaboration.md`, `docs/comments-and-idempotency.md`, `docs/phase-6.md`.
 - **Operations** — `docs/operations-runbook.md`, `docs/slos.md`, `docs/observability.md`, `docs/observability-shape.md`, `docs/release.md`.
 - **Security** — `docs/threat-model.md`, `SECURITY.md`.
 - **Contributing** — `CONTRIBUTING.md`, `docs/contributor-guide.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `MAINTAINERS.md`.
