@@ -56,6 +56,7 @@ nav:
       - Runbook: docs/operations-runbook.md
       - SLOs: docs/slos.md
       - Observability: docs/observability.md
+      - Observability shape: docs/observability-shape.md
       - Release flow: docs/release.md
   - Security:
       - Threat model: docs/threat-model.md
@@ -77,7 +78,7 @@ Existing `docs/*.md` and the new root-level governance docs group into six IA bu
 
 - **Getting Started** — `README.md`, `docs/docker-poc.md`, `docs/live-application.md`.
 - **Architecture** — `docs/overview.md`, `docs/grand-design.md`, `docs/production-oss-grand-design.md`, `docs/product-scope.md`, `docs/work-graph-domain.md`, `docs/knowledge-graph-domain.md`, `docs/collaboration.md`, `docs/comments-and-idempotency.md`, `docs/phase-6.md`.
-- **Operations** — `docs/operations-runbook.md`, `docs/slos.md`, `docs/observability.md`, `docs/release.md`.
+- **Operations** — `docs/operations-runbook.md`, `docs/slos.md`, `docs/observability.md`, `docs/observability-shape.md`, `docs/release.md`.
 - **Security** — `docs/threat-model.md`, `SECURITY.md`.
 - **Contributing** — `CONTRIBUTING.md`, `docs/contributor-guide.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `MAINTAINERS.md`.
 - **Reference** — `docs/production-grade-roadmap.md`, `docs/production-readiness-checklist.md`.

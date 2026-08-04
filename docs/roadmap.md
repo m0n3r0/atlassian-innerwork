@@ -76,6 +76,17 @@ suite. They form the stable surface that the beta program exercises.
   production-store restore drill recorded; audit sink is CLI-gated;
   retention is operator guidance). Docs-only: no new scripts or code.
   Post-phase-10 addition.
+- Observability shape (`docs/observability-shape.md`) — a recommended
+  Prometheus / log-scraping shape for operators wiring `innerwork` into
+  existing stacks: the shipped `GET /metrics` Prometheus 0.0.4 text
+  surface (metric catalog, label semantics, histogram buckets), the
+  JSON-lines log shape (field contract, `request_id` correlation), a
+  recommended `innerwork_*` naming/label convention for future domain
+  metrics, and collection guidance (pull-based scrape of `/metrics`
+  for service telemetry; textfile collector for the `innerwork metrics`
+  rollup) with an honest tradeoff table. No exporter ships — the shapes
+  are operator-side recommendations, labeled as such. Docs-only: no new
+  code. Post-phase-10 addition.
 - Beta program docs, launch plan, operations runbook, governance,
   security policy, post-launch iteration cadence.
 
@@ -86,12 +97,6 @@ suite. They form the stable surface that the beta program exercises.
 The items below are candidates for future work. They are listed in
 rough priority order as the maintainers see it today; that order is
 fluid and may change as beta feedback arrives.
-
-### Quality and operability
-
-- Document a recommended Prometheus / log-scraping shape for operators
-  who want to wire `innerwork` into existing observability stacks.
-  No exporter ships in Phase 10.
 
 ### Migration
 
